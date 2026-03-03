@@ -5,11 +5,15 @@ __pycache__/
 .mypy_cache/
 .venv/
 venv/
+*.egg-info/
 
 # Node
 node_modules/
 frontend/node_modules/
 frontend/dist/
+*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
 
 # Environment and secrets
 .env
