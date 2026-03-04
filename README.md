@@ -24,6 +24,20 @@ Full-stack app that ingests Google Workspace audit events, detects suspicious ma
    docker compose up --build
    ```
 
+   To build without using cache (e.g. after dependency or lockfile changes):
+
+   ```bash
+   docker compose build --no-cache
+   docker compose up
+   ```
+
+   To build only the frontend:
+
+   ```bash
+   docker compose build frontend
+   docker compose up
+   ```
+
    - Postgres: `localhost:5432`
    - Backend API: `http://localhost:8000`
    - Frontend: `http://localhost:5173`
