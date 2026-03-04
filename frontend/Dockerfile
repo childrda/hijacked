@@ -8,8 +8,9 @@ RUN npm ci --include=dev
 COPY . .
 RUN npm run build
 
-# Runtime stage: nginx serves static + proxies /api to backend
+# Runtime stage: nginx serves static + proxies /api to backend (no Node/npm at runtime)
 FROM nginx:alpine
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
