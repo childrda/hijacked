@@ -4,7 +4,7 @@ Full-stack app that ingests Google Workspace audit events, detects suspicious ma
 
 ## Stack
 
-- **Backend:** Python 3.11, FastAPI, SQLAlchemy, Alembic, APScheduler
+- **Backend:** Python 3.11, FastAPI, SQLAlchemy, Alembic
 - **DB:** PostgreSQL
 - **Frontend:** React (Vite), Tailwind CSS
 - **Deploy:** Docker Compose (local); Cloud Run + Cloud Scheduler (prod)

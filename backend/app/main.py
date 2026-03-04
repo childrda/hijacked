@@ -216,10 +216,12 @@ def _release_poll_lock(owner: str) -> None:
 
 
 async def internal_poll_loop():
-    s = get_settings()
     while True:
-        jitter = random.randint(-s.poll_jitter_seconds, s.poll_jitter_seconds) if s.poll_jitter_seconds > 0 else 0
-        sleep_for = max(1, s.poll_interval_seconds + jitter)
+        s = get_settings()
+        interval = max(1, int(getattr(s, "poll_interval_seconds", 300) or 1))
+        jitter_window = max(0, int(getattr(s, "poll_jitter_seconds", 0) or 0))
+        jitter = random.randint(-jitter_window, jitter_window) if jitter_window > 0 else 0
+        sleep_for = max(1, interval + jitter)
         await asyncio.sleep(sleep_for)
         await run_poll_and_notify(actor=f"internal-{uuid.uuid4()}")
 
