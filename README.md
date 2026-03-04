@@ -38,9 +38,11 @@ Full-stack app that ingests Google Workspace audit events, detects suspicious ma
    docker compose up
    ```
 
+   A **root `.dockerignore`** (and `frontend/.dockerignore`) excludes `node_modules`, `dist`, `.env`, etc. from the build context so host artifacts never get copied in and builds stay reproducible across machines.
+
    - Postgres: `localhost:5432`
    - Backend API: `http://localhost:8000`
-   - Frontend: `http://localhost:5173`
+   - Frontend (nginx): `http://localhost` (port 80; proxies `/api`, `/docs`, `/openapi.json` to backend)
 
 3. **Migrations and seed (first time)**
 
@@ -49,7 +51,7 @@ Full-stack app that ingests Google Workspace audit events, detects suspicious ma
    docker compose exec backend python -m scripts.seed_data
    ```
 
-   Open `http://localhost:5173` to see the dashboard and sample flagged accounts.
+   Open `http://localhost` to see the dashboard and sample flagged accounts.
 
 ## Config (.env)
 
@@ -131,7 +133,7 @@ Full-stack app that ingests Google Workspace audit events, detects suspicious ma
   npm run dev
   ```
 
-  Set `VITE_API_URL=http://localhost:8000` if the API is on another host.
+  The app uses relative `/api`; in production nginx proxies `/api` to the backend (no build-time API URL).
 
 ## Deploying backend (Cloud Run + Scheduler)
 

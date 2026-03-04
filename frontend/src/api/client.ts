@@ -1,10 +1,10 @@
-const BASE = import.meta.env.VITE_API_URL || '';
+const API_BASE = '/api';
 
 type RequestOptions = RequestInit & { skipAuthRedirect?: boolean };
 
 async function apiFetch(path: string, options: RequestOptions = {}) {
   const { skipAuthRedirect, ...init } = options;
-  const r = await fetch(`${BASE}${path}`, {
+  const r = await fetch(`${API_BASE}${path}`, {
     credentials: 'include',
     ...init,
   });
@@ -37,7 +37,7 @@ export type FlaggedRow = {
 export type AuthUser = { username: string; role: string };
 
 export async function getMetrics(window = '24h'): Promise<DashboardMetrics> {
-  const r = await apiFetch(`/api/dashboard/metrics?window=${window}`);
+  const r = await apiFetch(`/dashboard/metrics?window=${window}`);
   if (!r.ok) throw new Error('Failed to fetch metrics');
   return r.json();
 }
@@ -47,19 +47,19 @@ export async function getAlerts(params: { status?: string; window?: string; sear
   if (params.status) sp.set('status', params.status);
   if (params.window) sp.set('window', params.window);
   if (params.search) sp.set('search', params.search);
-  const r = await apiFetch(`/api/alerts?${sp}`);
+  const r = await apiFetch(`/alerts?${sp}`);
   if (!r.ok) throw new Error('Failed to fetch alerts');
   return r.json();
 }
 
 export async function dismissAlert(id: number): Promise<{ ok: boolean }> {
-  const r = await apiFetch(`/api/alerts/${id}/dismiss`, { method: 'POST' });
+  const r = await apiFetch(`/alerts/${id}/dismiss`, { method: 'POST' });
   if (!r.ok) throw new Error('Failed to dismiss');
   return r.json();
 }
 
 export async function bulkDismiss(alertIds: number[]): Promise<{ dismissed: number }> {
-  const r = await apiFetch(`/api/alerts/bulk-dismiss`, {
+  const r = await apiFetch(`/alerts/bulk-dismiss`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ alert_ids: alertIds }),
@@ -69,7 +69,7 @@ export async function bulkDismiss(alertIds: number[]): Promise<{ dismissed: numb
 }
 
 export async function disableAccount(alertIds: number[], reason = ''): Promise<{ actions: unknown[]; mode: string }> {
-  const r = await apiFetch(`/api/actions/disable-account`, {
+  const r = await apiFetch(`/actions/disable-account`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ alert_ids: alertIds, reason }),
@@ -79,7 +79,7 @@ export async function disableAccount(alertIds: number[], reason = ''): Promise<{
 }
 
 export async function login(username: string, password: string): Promise<AuthUser> {
-  const r = await apiFetch('/api/auth/login', {
+  const r = await apiFetch('/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password }),
@@ -90,23 +90,23 @@ export async function login(username: string, password: string): Promise<AuthUse
 }
 
 export async function logout(): Promise<void> {
-  await apiFetch('/api/auth/logout', { method: 'POST', skipAuthRedirect: true });
+  await apiFetch('/auth/logout', { method: 'POST', skipAuthRedirect: true });
 }
 
 export async function me(): Promise<AuthUser> {
-  const r = await apiFetch('/api/auth/me', { skipAuthRedirect: true });
+  const r = await apiFetch('/auth/me', { skipAuthRedirect: true });
   if (!r.ok) throw new Error('Not authenticated');
   return r.json();
 }
 
 export async function getAlertDetail(id: number): Promise<any> {
-  const r = await apiFetch(`/api/alerts/${id}`);
+  const r = await apiFetch(`/alerts/${id}`);
   if (!r.ok) throw new Error('Failed to fetch alert detail');
   return r.json();
 }
 
 export async function updateAlertStatus(id: number, status: string): Promise<{ ok: boolean }> {
-  const r = await apiFetch(`/api/alerts/${id}/status`, {
+  const r = await apiFetch(`/alerts/${id}/status`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ status }),
@@ -116,7 +116,7 @@ export async function updateAlertStatus(id: number, status: string): Promise<{ o
 }
 
 export async function updateAlertNotes(id: number, notes: string): Promise<{ ok: boolean }> {
-  const r = await apiFetch(`/api/alerts/${id}/notes`, {
+  const r = await apiFetch(`/alerts/${id}/notes`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ notes }),
