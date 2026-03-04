@@ -4,7 +4,7 @@ import type { DashboardMetrics, FlaggedRow } from '../api/client'
 import { MetricCards } from '../components/MetricCards'
 import { FlaggedTable } from '../components/FlaggedTable'
 
-export function Dashboard() {
+export function Dashboard({ user }: { user: { username: string; role: string } }) {
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null)
   const [alerts, setAlerts] = useState<FlaggedRow[]>([])
   const [loadingMetrics, setLoadingMetrics] = useState(true)
@@ -52,6 +52,7 @@ export function Dashboard() {
         search={search}
         onSearchChange={setSearch}
         refresh={fetchAlerts}
+        user={user}
       />
     </div>
   )

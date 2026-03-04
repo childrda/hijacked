@@ -1,21 +1,30 @@
-"""FastAPI app: routes, CORS, scheduler."""
+"""FastAPI app: routes, auth, polling orchestration."""
 from __future__ import annotations
 
 import asyncio
 import logging
+import random
+import time
+import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text, select
 
 from app.config import get_settings
-from app.db.session import init_db
+from app.db.session import init_db, SessionLocal
+from app.db.models import Detection, PollLock
 from app.api.routes_dashboard import router as dashboard_router
 from app.api.routes_alerts import router as alerts_router
 from app.api.routes_actions import router as actions_router
 from app.api.routes_settings import router as settings_router
 from app.api.routes_auth import router as auth_router
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user_optional
+from app.google.auth import get_credentials, SCOPES_REPORTS
+from app.services.audit_service import log_audit
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -26,11 +35,13 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     settings.ensure_secure()
     init_db()
-    if not settings.is_prod:
-        app.state.scheduler = start_scheduler()
+    app.state.internal_poll_task = None
+    if settings.poll_mode == "internal" and settings.poll_enabled_effective:
+        app.state.internal_poll_task = asyncio.create_task(internal_poll_loop())
     yield
-    if getattr(app.state, "scheduler", None):
-        app.state.scheduler.shutdown(wait=False)
+    task = getattr(app.state, "internal_poll_task", None)
+    if task:
+        task.cancel()
 
 
 app = FastAPI(
@@ -55,27 +66,100 @@ app.include_router(settings_router)
 app.include_router(auth_router)
 
 
+@app.middleware("http")
+async def add_request_id(request: Request, call_next):
+    request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
+    request.state.request_id = request_id
+    start = time.time()
+    response = await call_next(request)
+    duration_ms = int((time.time() - start) * 1000)
+    logger.info(
+        "request",
+        extra={
+            "request_id": request_id,
+            "path": request.url.path,
+            "method": request.method,
+            "status_code": response.status_code,
+            "duration_ms": duration_ms,
+        },
+    )
+    response.headers["x-request-id"] = request_id
+    return response
+
+
 @app.post("/api/cron/poll")
-def cron_poll(
-    _current_user: str = Depends(get_current_user),
+async def cron_poll(
+    request: Request,
+    force: bool = Query(False),
+    x_cron_key: str | None = Header(None),
+    session_user: dict | None = Depends(get_current_user_optional),
 ):
-    """Cloud Scheduler (or cron) trigger: run poll and notify. Call with auth in prod."""
-    run_poll_and_notify()
+    if force:
+        if not session_user or session_user.get("role") != "responder":
+            raise HTTPException(status_code=403, detail="force=true requires responder session")
+    else:
+        await _authorize_cron(request, x_cron_key)
+    ok = await run_poll_and_notify(force=force, actor="cron")
+    db = SessionLocal()
+    try:
+        log_audit(
+            db,
+            actor=(session_user or {}).get("username", "cron"),
+            action="CRON_POLL",
+            payload_summary={"force": force},
+            result="success" if ok else "fail",
+        )
+    finally:
+        db.close()
+    if not ok:
+        raise HTTPException(status_code=429, detail="poll_lock_not_acquired")
     return {"ok": True}
+
+
+@app.get("/healthz")
+def healthz():
+    return {"status": "ok"}
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return healthz()
 
 
-def run_poll_and_notify():
-    """Sync job: poll once, then send emails for detections that need it."""
-    from app.db.session import SessionLocal
+@app.get("/readyz")
+def readyz():
+    db = SessionLocal()
+    try:
+        db.execute(text("SELECT 1"))
+    finally:
+        db.close()
+    s = get_settings()
+    if s.enable_google_workspace:
+        try:
+            get_credentials(SCOPES_REPORTS)
+        except Exception as e:
+            return JSONResponse(status_code=503, content={"status": "not_ready", "error": f"google_auth:{e}"})
+    return {"status": "ready"}
+
+
+async def run_poll_and_notify(*, force: bool = False, actor: str = "system") -> bool:
+    """Single poll pass with lock + max-runtime guardrails."""
+    acquired = _acquire_poll_lock(actor)
+    if not acquired:
+        return False
+    try:
+        await asyncio.wait_for(asyncio.to_thread(_run_poll_and_notify_sync), timeout=get_settings().poll_max_runtime_seconds)
+    except asyncio.TimeoutError:
+        logger.exception("Poll runtime exceeded max runtime")
+    finally:
+        _release_poll_lock(actor)
+    return True
+
+
+def _run_poll_and_notify_sync():
+    """Sync job body: poll once, then send emails for detections that need it."""
     from app.ingest.poller import poll_once
     from app.services.action_service import should_send_detection_email, send_detection_notification
-    from app.db.models import Detection
-    from sqlalchemy import select
 
     db = SessionLocal()
     try:
@@ -83,10 +167,10 @@ def run_poll_and_notify():
             poll_once(db)
         except Exception as e:
             logger.exception("Poll failed: %s", e)
-        # Send notifications for OPEN detections that meet threshold and should_send
+        # Send notifications for active detections that meet threshold and should_send
         try:
             open_detections = db.execute(
-                select(Detection).where(Detection.status == "OPEN")
+                select(Detection).where(Detection.status.in_(["NEW", "TRIAGE"]))
             ).scalars().all()
             for det in open_detections:
                 if should_send_detection_email(det):
@@ -97,22 +181,76 @@ def run_poll_and_notify():
         db.close()
 
 
-def start_scheduler():
-    from apscheduler.schedulers.background import BackgroundScheduler
+def _acquire_poll_lock(owner: str) -> bool:
+    now = datetime.now(timezone.utc)
     settings = get_settings()
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(
-        run_poll_and_notify,
-        "interval",
-        minutes=max(1, settings.lookback_minutes),
-        id="poll_workspace",
-    )
-    scheduler.start()
-    return scheduler
+    db = SessionLocal()
+    try:
+        lock = db.query(PollLock).filter(PollLock.name == "poll").first()
+        lock_until = lock.locked_until if lock else None
+        if lock_until and lock_until.tzinfo is None:
+            lock_until = lock_until.replace(tzinfo=timezone.utc)
+        if lock and lock_until and lock_until > now:
+            return False
+        until = now + timedelta(seconds=settings.poll_lock_ttl_seconds)
+        if lock:
+            lock.locked_until = until
+            lock.owner = owner
+        else:
+            db.add(PollLock(name="poll", locked_until=until, owner=owner))
+        db.commit()
+        return True
+    finally:
+        db.close()
 
 
-# Optional: start scheduler when running uvicorn directly (local dev)
+def _release_poll_lock(owner: str) -> None:
+    db = SessionLocal()
+    try:
+        lock = db.query(PollLock).filter(PollLock.name == "poll").first()
+        if lock and lock.owner == owner:
+            lock.locked_until = datetime.now(timezone.utc)
+            db.commit()
+    finally:
+        db.close()
+
+
+async def internal_poll_loop():
+    s = get_settings()
+    while True:
+        jitter = random.randint(-s.poll_jitter_seconds, s.poll_jitter_seconds) if s.poll_jitter_seconds > 0 else 0
+        sleep_for = max(1, s.poll_interval_seconds + jitter)
+        await asyncio.sleep(sleep_for)
+        await run_poll_and_notify(actor=f"internal-{uuid.uuid4()}")
+
+
+async def _authorize_cron(request: Request, x_cron_key: str | None) -> None:
+    s = get_settings()
+    mode = s.cron_auth_mode.lower()
+    if mode == "apikey":
+        if not s.cron_api_key or x_cron_key != s.cron_api_key:
+            raise HTTPException(status_code=401, detail="Invalid cron API key")
+        return
+    if mode == "oidc":
+        auth = request.headers.get("authorization", "")
+        if not auth.lower().startswith("bearer "):
+            raise HTTPException(status_code=401, detail="Missing bearer token")
+        token = auth.split(" ", 1)[1]
+        try:
+            from google.oauth2 import id_token
+            from google.auth.transport import requests as google_requests
+
+            audience = s.cron_oidc_audience or str(request.url).split("?")[0]
+            info = id_token.verify_oauth2_token(token, google_requests.Request(), audience=audience)
+            issuer = info.get("iss")
+            if issuer not in {"https://accounts.google.com", "accounts.google.com"}:
+                raise ValueError("invalid issuer")
+        except Exception as e:
+            raise HTTPException(status_code=401, detail=f"Invalid OIDC token: {e}") from e
+        return
+    raise HTTPException(status_code=401, detail="Unsupported cron auth mode")
+
+
 if __name__ == "__main__":
     import uvicorn
-    app.state.scheduler = start_scheduler()
     uvicorn.run(app, host="0.0.0.0", port=8000)

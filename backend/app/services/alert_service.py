@@ -6,12 +6,12 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.db.models import Detection
+from app.db.models import Detection, AuditLog
 
 
 def get_flagged(
     db: Session,
-    status: str = "OPEN",
+    status: str = "NEW",
     window_hours: int = 24,
     search: str | None = None,
 ) -> list[dict[str, Any]]:
@@ -39,6 +39,7 @@ def _detection_to_row(d: Detection) -> dict[str, Any]:
         "risk_level": d.risk_level,
         "score": d.score,
         "status": d.status,
+        "assigned_to": d.assigned_to,
     }
 
 
@@ -89,7 +90,7 @@ def dismiss_alert(db: Session, detection_id: int) -> bool:
     det = db.get(Detection, detection_id)
     if not det:
         return False
-    det.status = "DISMISSED"
+    det.status = "FALSE_POSITIVE"
     det.updated_at = datetime.now(timezone.utc)
     db.commit()
     return True
@@ -100,8 +101,86 @@ def bulk_dismiss(db: Session, detection_ids: list[int]) -> int:
     for did in detection_ids:
         det = db.get(Detection, did)
         if det:
-            det.status = "DISMISSED"
+            det.status = "FALSE_POSITIVE"
             det.updated_at = datetime.now(timezone.utc)
             count += 1
     db.commit()
     return count
+
+
+def get_alert_detail(db: Session, detection_id: int) -> dict[str, Any] | None:
+    det = db.get(Detection, detection_id)
+    if not det:
+        return None
+    audits = (
+        db.query(AuditLog)
+        .filter(AuditLog.alert_id == detection_id)
+        .order_by(AuditLog.timestamp.desc())
+        .limit(50)
+        .all()
+    )
+    timeline = []
+    for h in (det.rule_hits_json or []):
+        params = h.get("parameters") or {}
+        timeline.append(
+            {
+                "rule": h.get("rule"),
+                "when": params.get("event_time"),
+                "parameters": params,
+            }
+        )
+    return {
+        "id": det.id,
+        "target_email": det.target_email,
+        "status": det.status,
+        "assigned_to": det.assigned_to,
+        "notes": det.notes,
+        "score": det.score,
+        "risk_level": det.risk_level,
+        "window_start": det.window_start.isoformat(),
+        "window_end": det.window_end.isoformat(),
+        "rule_hits": det.rule_hits_json or [],
+        "reasons": det.reasons_json or [],
+        "timeline": timeline,
+        "audit_log": [
+            {
+                "timestamp": a.timestamp.isoformat() if a.timestamp else None,
+                "actor": a.actor,
+                "action": a.action,
+                "result": a.result,
+                "payload_summary": a.payload_summary,
+                "error": a.error,
+            }
+            for a in audits
+        ],
+    }
+
+
+def update_status(db: Session, detection_id: int, status: str) -> bool:
+    det = db.get(Detection, detection_id)
+    if not det:
+        return False
+    det.status = status
+    det.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    return True
+
+
+def assign_alert(db: Session, detection_id: int, assigned_to: str | None) -> bool:
+    det = db.get(Detection, detection_id)
+    if not det:
+        return False
+    det.assigned_to = assigned_to
+    det.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    return True
+
+
+def set_notes(db: Session, detection_id: int, notes: str | None) -> bool:
+    det = db.get(Detection, detection_id)
+    if not det:
+        return False
+    det.notes = notes
+    det.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    return True

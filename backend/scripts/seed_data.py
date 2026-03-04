@@ -8,8 +8,7 @@ from datetime import datetime, timezone, timedelta
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.db.session import SessionLocal, init_db
-from app.db.models import Detection, AdminUser
-from app.api.auth import hash_password
+from app.db.models import Detection
 
 
 def seed():
@@ -29,7 +28,7 @@ def seed():
                 "rule_hits_json": [
                     {"rule": "external_forwarding_enabled", "parameters": {"destination": "user1@external-mx.com"}},
                 ],
-                "status": "OPEN",
+                "status": "NEW",
             },
             {
                 "target_email": "jessica.lee@acme.net",
@@ -41,7 +40,7 @@ def seed():
                 "rule_hits_json": [
                     {"rule": "filter_with_delete", "parameters": {"filters": "DELETED"}},
                 ],
-                "status": "OPEN",
+                "status": "NEW",
             },
             {
                 "target_email": "admin_logins_bot",
@@ -53,7 +52,7 @@ def seed():
                 "rule_hits_json": [
                     {"rule": "send_as_alias", "parameters": {"alias": "sales@untrusted.co"}},
                 ],
-                "status": "OPEN",
+                "status": "TRIAGE",
             },
         ]
         for s in samples:
@@ -63,11 +62,8 @@ def seed():
             ).first()
             if not existing:
                 db.add(Detection(**s))
-        # Default admin for dev: admin / admin
-        if not db.query(AdminUser).filter(AdminUser.username == "admin").first():
-            db.add(AdminUser(username="admin", password_hash=hash_password("admin")))
         db.commit()
-        print("Seed done: sample detections + admin user (admin/admin).")
+        print("Seed done: sample detections.")
     finally:
         db.close()
 

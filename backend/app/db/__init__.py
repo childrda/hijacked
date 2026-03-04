@@ -1,4 +1,16 @@
-from app.db.models import Base, User, RawEvent, NormalizedEvent, Detection, Action, Setting, AdminUser
+from app.db.models import (
+    Base,
+    User,
+    RawEvent,
+    NormalizedEvent,
+    Detection,
+    Action,
+    Setting,
+    AdminUser,
+    AuditLog,
+    PollCheckpoint,
+    PollLock,
+)
 from app.db.session import get_db, get_db_context, init_db, SessionLocal, engine
 
 __all__ = [
@@ -10,6 +22,9 @@ __all__ = [
     "Action",
     "Setting",
     "AdminUser",
+    "AuditLog",
+    "PollCheckpoint",
+    "PollLock",
     "get_db",
     "get_db_context",
     "init_db",

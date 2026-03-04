@@ -45,6 +45,10 @@ Full-stack app that ingests Google Workspace audit events, detects suspicious ma
 | `GOOGLE_WORKSPACE_ADMIN_USER` | Admin user for domain-wide delegation (e.g. `admin@domain.tld`) |
 | `SUPPORT_EMAIL` | Email that receives alerts and test emails |
 | `ACTION_FLAG` | `true` = run containment when triggered; `false` = record proposed actions only |
+| `ACTION_COOLDOWN_MINUTES` | Prevent repeated disable actions on same account within cooldown window |
+| `ADMIN_USERNAME`, `ADMIN_PASSWORD` | Internal login credentials used by `/api/auth/login` |
+| `RESPONDER_USERS` | Comma-separated usernames with responder privileges |
+| `SESSION_EXPIRY_HOURS` | Session cookie JWT lifetime in hours (default 8) |
 | `ENABLE_GOOGLE_WORKSPACE` | `true/false` toggle for Google containment backend |
 | `ENABLE_ACTIVE_DIRECTORY` | `true/false` toggle for Active Directory containment backend |
 | `AD_LDAP_URL` | AD LDAP/LDAPS endpoint (required when `ENABLE_ACTIVE_DIRECTORY=true`) |
@@ -69,6 +73,15 @@ Full-stack app that ingests Google Workspace audit events, detects suspicious ma
 | `MASS_SEND_ALLOWLIST_SUBJECT_KEYWORDS` | Optional comma-separated exempt subject keywords |
 | `MASS_SEND_SEVERITY_POINTS_SINGLE` | Points added for single-message fanout rule |
 | `MASS_SEND_SEVERITY_POINTS_BURST` | Points added for burst-window rule |
+| `CRON_AUTH_MODE` | `apikey` or `oidc` for `/api/cron/poll` authentication |
+| `CRON_API_KEY` | Required when `CRON_AUTH_MODE=apikey` (sent in `X-CRON-KEY`) |
+| `CRON_OIDC_AUDIENCE` | Optional explicit audience for OIDC token validation |
+| `POLL_MODE` | `scheduler` (recommended prod) or `internal` |
+| `POLL_ENABLED` | Poll loop switch; defaults safe for prod detect-only behavior |
+| `POLL_INTERVAL_SECONDS` | Internal loop interval |
+| `POLL_JITTER_SECONDS` | Random jitter for internal loop |
+| `POLL_LOCK_TTL_SECONDS` | Poll lock TTL to prevent overlapping runs |
+| `POLL_MAX_RUNTIME_SECONDS` | Runtime guardrail for one poll pass |
 | `UI_BASE_URL` | Base URL for links in emails (e.g. `https://your-ui.example.com`) |
 
 ## Google Workspace setup (Domain-Wide Delegation)
@@ -111,6 +124,33 @@ Full-stack app that ingests Google Workspace audit events, detects suspicious ma
 1. Build and push the backend image; deploy to Cloud Run with `DATABASE_URL` (Cloud SQL or other), env vars above, and no public unauthenticated access.
 2. Create a Cloud Scheduler job that calls `POST https://your-run-url/api/cron/poll` with auth (OIDC or API key). Suggested frequency: every 15 minutes (or match `LOOKBACK_MINUTES`).
 
+Example frequencies:
+- 1 min: `* * * * *`
+- 2 min: `*/2 * * * *`
+- 5 min: `*/5 * * * *`
+- 10 min: `*/10 * * * *`
+
+Example (API key mode):
+
+```bash
+gcloud scheduler jobs create http hijacked-poll \
+  --schedule "*/5 * * * *" \
+  --http-method POST \
+  --uri "https://YOUR_RUN_URL/api/cron/poll" \
+  --headers "X-CRON-KEY=YOUR_CRON_KEY"
+```
+
+Example (OIDC mode):
+
+```bash
+gcloud scheduler jobs create http hijacked-poll \
+  --schedule "*/5 * * * *" \
+  --http-method POST \
+  --uri "https://YOUR_RUN_URL/api/cron/poll" \
+  --oidc-service-account-email "scheduler-sa@PROJECT_ID.iam.gserviceaccount.com" \
+  --oidc-token-audience "https://YOUR_RUN_URL/api/cron/poll"
+```
+
 ## Safety: ACTION_FLAG and backend toggles
 
 - **`ACTION_FLAG=false` (default):** Containment is **not** executed. The app records a **proposed** action and shows it in the UI and in the email. Use this until you have validated rules and workflows.
@@ -140,11 +180,26 @@ You can enable one, both, or neither. All actions are stored in the `actions` ta
 
 - `GET /api/dashboard/metrics?window=24h` – critical count, recent events, trend, agent status
 - `GET /api/alerts?status=OPEN&window=24h&search=` – flagged accounts
+- `GET /api/alerts/{id}` – alert detail + timeline + audit trail
 - `POST /api/alerts/{id}/dismiss` – dismiss one
 - `POST /api/alerts/bulk-dismiss` – body `{ "alert_ids": [1,2,...] }`
+- `POST /api/alerts/{id}/status` – set status (`NEW|TRIAGE|CONTAINED|FALSE_POSITIVE|CLOSED`)
+- `POST /api/alerts/{id}/assign` – assign responder
+- `POST /api/alerts/{id}/notes` – add/update notes
 - `POST /api/actions/disable-account` – body `{ "alert_ids": [...], "reason": "..." }`
 - `POST /api/settings/test-email` – send test email to SUPPORT_EMAIL
 - `POST /api/cron/poll` – trigger poll + notify (for Cloud Scheduler)
+- `GET /healthz`, `GET /readyz`
+
+## Operations
+
+- **Safe defaults:** keep `ACTION_FLAG=false` in production until playbooks are validated.
+- **Least privilege:** only usernames in `RESPONDER_USERS` can run containment and status transitions.
+- **Secret rotation:** rotate `ADMIN_PASSWORD`, `CRON_API_KEY`, `SECRET_KEY`, SMTP credentials on a schedule; restart service after rotation.
+- **Poll mode:**
+  - `POLL_MODE=scheduler` (recommended): no internal loop; use Cloud Scheduler cadence.
+  - `POLL_MODE=internal`: backend runs poll loop with `POLL_INTERVAL_SECONDS +/- POLL_JITTER_SECONDS`.
+- **Incident flow runbook:** `NEW -> TRIAGE -> CONTAINED (if needed) -> CLOSED` or `FALSE_POSITIVE`; record notes and assignment on each step.
 
 ## Email alerts
 

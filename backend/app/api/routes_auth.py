@@ -1,16 +1,22 @@
-"""Login and token for UI."""
+"""Login/logout using HttpOnly session cookie."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from datetime import datetime, timedelta, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.db.session import get_db
 from app.api.auth import (
-    get_admin_user,
-    verify_password,
+    verify_login,
+    user_role,
     create_access_token,
+    get_current_user,
+    SESSION_COOKIE_NAME,
 )
+from app.config import get_settings
+from app.db.session import get_db
+from app.services.audit_service import log_audit
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -21,14 +27,39 @@ class LoginRequest(BaseModel):
 
 
 class LoginResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
+    username: str
+    role: str
 
 
 @router.post("/login", response_model=LoginResponse)
-def login(body: LoginRequest, db: Session = Depends(get_db)):
-    user = get_admin_user(db, body.username)
-    if not user or not verify_password(body.password, user.password_hash):
+def login(body: LoginRequest, response: Response, db: Session = Depends(get_db)):
+    if not verify_login(body.username, body.password):
+        log_audit(db, actor=body.username, action="AUTH_LOGIN", result="fail", error="invalid_credentials")
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    token = create_access_token(data={"sub": user.username})
-    return LoginResponse(access_token=token)
+    role = user_role(body.username)
+    token = create_access_token(data={"sub": body.username, "role": role})
+    s = get_settings()
+    expires = datetime.now(timezone.utc) + timedelta(hours=s.session_expiry_hours)
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=token,
+        httponly=True,
+        secure=s.is_prod,
+        samesite="lax",
+        expires=expires,
+        path="/",
+    )
+    log_audit(db, actor=body.username, action="AUTH_LOGIN", result="success", payload_summary={"role": role})
+    return LoginResponse(username=body.username, role=role)
+
+
+@router.post("/logout")
+def logout(response: Response, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    response.delete_cookie(key=SESSION_COOKIE_NAME, path="/")
+    log_audit(db, actor=user.get("username", "unknown"), action="AUTH_LOGOUT", result="success")
+    return {"ok": True}
+
+
+@router.get("/me")
+async def me(user: dict = Depends(get_current_user)):
+    return {"username": user.get("username"), "role": user.get("role")}

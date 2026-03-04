@@ -26,11 +26,40 @@ async def disable_account(
     results = []
     for det_id in alert_ids:
         det = db.get(Detection, det_id)
-        if not det or det.status != "OPEN":
+        if not det:
+            continue
+        if det.status in {"CONTAINED", "CLOSED"}:
+            continue
+        # Cooldown to avoid repeated disable action on same account.
+        recent_action = (
+            db.query(Action)
+            .filter(Action.target_email == det.target_email)
+            .filter(Action.action_type == "DISABLE_ACCOUNT")
+            .filter(Action.created_at >= datetime.now(timezone.utc) - timedelta(minutes=settings.action_cooldown_minutes))
+            .first()
+        )
+        if recent_action:
+            results.append(
+                {
+                    "detection_id": det_id,
+                    "target_email": det.target_email,
+                    "result": "FAILED",
+                    "error": "cooldown_active",
+                }
+            )
             continue
         target = det.target_email
         details = run_containment(db, target, det_id, mode=mode)
         result = result_from_details(details)
+        time_bucket_start = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+        existing = (
+            db.query(Action)
+            .filter(Action.detection_id == det_id, Action.action_type == "DISABLE_ACCOUNT")
+            .first()
+        )
+        if existing:
+            results.append({"detection_id": det_id, "target_email": target, "result": existing.result, "deduped": True})
+            continue
         act = Action(
             detection_id=det_id,
             target_email=target,
@@ -38,9 +67,13 @@ async def disable_account(
             mode=mode,
             result=result,
             details_json=details,
+            time_bucket_start=time_bucket_start,
         )
         db.add(act)
-        det.status = "ACTIONED"
+        if mode == "TAKEN" and result == "SUCCESS":
+            det.status = "CONTAINED"
+        elif det.status == "NEW":
+            det.status = "TRIAGE"
         det.updated_at = datetime.now(timezone.utc)
         results.append({"detection_id": det_id, "target_email": target, "result": result})
     db.commit()
@@ -96,7 +129,7 @@ def build_detection_email(
 
 def should_send_detection_email(detection: Detection) -> bool:
     """Re-email only if: new, or risk escalated, or score +20, or >=12h since last."""
-    if detection.status != "OPEN":
+    if detection.status not in {"NEW", "TRIAGE"}:
         return False
     threshold = get_settings().severity_threshold
     if detection.score < threshold:

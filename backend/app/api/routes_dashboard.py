@@ -19,7 +19,7 @@ router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 def get_metrics(
     window: str = Query("24h", description="e.g. 24h"),
     db: Session = Depends(get_db),
-    _current_user: str = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
     try:
         h = int(window.replace("h", "").replace("H", ""))
@@ -30,7 +30,7 @@ def get_metrics(
     open_detections = (
         db.query(Detection)
         .filter(Detection.window_end >= cutoff)
-        .filter(Detection.status == "OPEN")
+        .filter(Detection.status.in_(["NEW", "TRIAGE"]))
         .all()
     )
     critical = sum(1 for d in open_detections if (d.risk_level or "").upper() == "CRITICAL")

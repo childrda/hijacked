@@ -1,79 +1,73 @@
-"""Simple admin auth for dev; pluggable JWT/SSO later."""
+"""Cookie-based auth + role checks."""
 from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
-from typing import Annotated
+from typing import Any
 
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, OAuth2PasswordBearer
+from fastapi import Depends, HTTPException, Request
 from jose import JWTError, jwt
-from passlib.context import CryptContext
-from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.db.session import get_db
-from app.db.models import AdminUser
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
-bearer = HTTPBearer(auto_error=False)
-
-SECRET_KEY = get_settings().secret_key
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
+SESSION_COOKIE_NAME = "session"
 
 
-def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+def verify_login(username: str, password: str) -> bool:
+    s = get_settings()
+    return username == s.admin_username and password == s.admin_password
 
 
-def hash_password(plain: str) -> str:
-    return pwd_context.hash(plain)
+def user_role(username: str) -> str:
+    s = get_settings()
+    if username in s.responder_users_list:
+        return "responder"
+    return "viewer"
 
 
-def get_admin_user(db: Session, username: str) -> AdminUser | None:
-    return db.execute(select(AdminUser).where(AdminUser.username == username)).scalars().first()
-
-
-def create_access_token(data: dict) -> str:
+def create_access_token(data: dict[str, Any]) -> str:
+    settings = get_settings()
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = datetime.now(timezone.utc) + timedelta(hours=settings.session_expiry_hours)
     to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return jwt.encode(to_encode, settings.secret_key, algorithm=ALGORITHM)
 
 
-def decode_token(token: str) -> dict | None:
+def decode_token(token: str) -> dict[str, Any] | None:
+    settings = get_settings()
     try:
-        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return jwt.decode(token, settings.secret_key, algorithms=[ALGORITHM])
     except JWTError:
         return None
 
 
 async def get_current_user_optional(
-    creds: HTTPAuthorizationCredentials | None = Depends(bearer),
-    db: Session = Depends(get_db),
-) -> str | None:
-    """Return username if valid token; else None. For prod, require auth."""
-    if not creds or not creds.credentials:
-        if get_settings().is_prod:
-            raise HTTPException(status_code=401, detail="Authentication required")
+    request: Request,
+) -> dict[str, Any] | None:
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+    if not token:
         return None
-    payload = decode_token(creds.credentials)
+    payload = decode_token(token)
     if not payload:
         return None
     username = payload.get("sub")
     if not username:
         return None
-    if not get_admin_user(db, username):
-        return None
-    return username
+    role = payload.get("role") or user_role(username)
+    return {"username": username, "role": role}
 
 
 async def get_current_user(
-    username: str | None = Depends(get_current_user_optional),
-) -> str:
-    """Require auth in prod; in dev allow anonymous."""
-    if get_settings().is_prod and not username:
+    user: dict[str, Any] | None = Depends(get_current_user_optional),
+) -> dict[str, Any]:
+    if get_settings().is_prod and not user:
         raise HTTPException(status_code=401, detail="Authentication required")
-    return username or "dev"
+    return user or {"username": "dev", "role": "responder"}
+
+
+async def require_responder(
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    if user.get("role") != "responder":
+        raise HTTPException(status_code=403, detail="Responder role required")
+    return user

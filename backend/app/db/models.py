@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, JSON
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, JSON, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -65,7 +65,12 @@ class Detection(Base):
     risk_level: Mapped[str] = mapped_column(String(32), nullable=False)  # LOW, MEDIUM, HIGH, CRITICAL
     reasons_json: Mapped[list[Any] | None] = mapped_column(JSON, nullable=True)
     rule_hits_json: Mapped[list[Any] | None] = mapped_column(JSON, nullable=True)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, default="OPEN")  # OPEN, DISMISSED, ACTIONED
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="NEW")  # NEW, TRIAGE, CONTAINED, FALSE_POSITIVE, CLOSED
+    assigned_to: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rule_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    evidence_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    time_bucket_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
     notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -74,6 +79,16 @@ class Detection(Base):
 
     actions: Mapped[list[Action]] = relationship(
         "Action", back_populates="detection", cascade="all, delete-orphan", order_by="Action.created_at"
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "target_email",
+            "rule_id",
+            "evidence_hash",
+            "time_bucket_start",
+            name="uq_detection_dedupe",
+        ),
     )
 
 
@@ -87,9 +102,15 @@ class Action(Base):
     mode: Mapped[str] = mapped_column(String(32), nullable=False)  # TAKEN, PROPOSED
     result: Mapped[str] = mapped_column(String(32), nullable=False)  # SUCCESS, FAILED, PARTIAL
     details_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    time_bucket_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     detection: Mapped[Detection | None] = relationship("Detection", back_populates="actions")
+
+    __table_args__ = (
+        UniqueConstraint("detection_id", "action_type", name="uq_action_detection_type"),
+        UniqueConstraint("target_email", "action_type", "time_bucket_start", name="uq_action_target_type_bucket"),
+    )
 
 
 class Setting(Base):
@@ -109,4 +130,38 @@ class AdminUser(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     username: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(32), nullable=False, default="viewer")  # viewer | responder
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+    actor: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    action: Mapped[str] = mapped_column(String(128), nullable=False)
+    target_user: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    alert_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    payload_summary: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    result: Mapped[str] = mapped_column(String(32), nullable=False)  # success | fail
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class PollCheckpoint(Base):
+    __tablename__ = "poll_checkpoints"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    last_seen_event_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class PollLock(Base):
+    __tablename__ = "poll_locks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)

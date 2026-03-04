@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import type { FlaggedRow } from '../api/client'
-import { dismissAlert, bulkDismiss, disableAccount } from '../api/client'
+import { dismissAlert, bulkDismiss, disableAccount, getAlertDetail, updateAlertStatus, updateAlertNotes } from '../api/client'
 import { RiskBadge } from './RiskBadge'
 import { ConfirmModal } from './ConfirmModal'
 
@@ -27,13 +27,16 @@ type Props = {
   search: string
   onSearchChange: (v: string) => void
   refresh: () => void
+  user: { username: string; role: string }
 }
 
-export function FlaggedTable({ rows, loading, search, onSearchChange, refresh }: Props) {
+export function FlaggedTable({ rows, loading, search, onSearchChange, refresh, user }: Props) {
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [busy, setBusy] = useState(false)
   const [modal, setModal] = useState<'disable-one' | 'disable-bulk' | 'dismiss-bulk' | null>(null)
   const [modalPayload, setModalPayload] = useState<number | number[] | null>(null)
+  const [detail, setDetail] = useState<any | null>(null)
+  const [notes, setNotes] = useState('')
 
   const selectAll = useMemo(() => rows.length > 0 && selected.size === rows.length, [rows.length, selected.size])
   const toggleAll = () => {
@@ -83,6 +86,14 @@ export function FlaggedTable({ rows, loading, search, onSearchChange, refresh }:
     }
   }
 
+  const openDetail = async (id: number) => {
+    const d = await getAlertDetail(id)
+    setDetail(d)
+    setNotes(d?.notes || '')
+  }
+
+  const canRespond = user.role === 'responder'
+
   return (
     <>
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
@@ -101,7 +112,7 @@ export function FlaggedTable({ rows, loading, search, onSearchChange, refresh }:
           <div className="flex gap-2">
             <button
               type="button"
-              disabled={selected.size === 0 || busy}
+              disabled={selected.size === 0 || busy || !canRespond}
               onClick={() => {
                 setModalPayload(Array.from(selected))
                 setModal('disable-bulk')
@@ -140,19 +151,21 @@ export function FlaggedTable({ rows, loading, search, onSearchChange, refresh }:
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Event Type</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Details</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Risk Level</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Status</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Assigned</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="py-8 text-center text-gray-500">
+                  <td colSpan={9} className="py-8 text-center text-gray-500">
                     Loading…
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-8 text-center text-gray-500">
+                  <td colSpan={9} className="py-8 text-center text-gray-500">
                     No flagged accounts in the last 24 hours.
                   </td>
                 </tr>
@@ -183,15 +196,18 @@ export function FlaggedTable({ rows, loading, search, onSearchChange, refresh }:
                     <td className="py-3 px-4">
                       <RiskBadge level={row.risk_level} />
                     </td>
+                    <td className="py-3 px-4 text-gray-700">{row.status}</td>
+                    <td className="py-3 px-4 text-gray-700">{row.assigned_to || '—'}</td>
                     <td className="py-3 px-4">
                       <div className="flex gap-2">
                         <button
                           type="button"
+                          disabled={!canRespond}
                           onClick={() => {
                             setModalPayload(row.id)
                             setModal('disable-one')
                           }}
-                          className="px-3 py-1.5 rounded bg-red-600 text-white text-xs font-medium uppercase hover:bg-red-700"
+                          className="px-3 py-1.5 rounded bg-red-600 text-white text-xs font-medium uppercase hover:bg-red-700 disabled:opacity-50"
                         >
                           Disable Account
                         </button>
@@ -202,6 +218,13 @@ export function FlaggedTable({ rows, loading, search, onSearchChange, refresh }:
                           className="px-3 py-1.5 rounded bg-gray-500 text-white text-xs font-medium uppercase hover:bg-gray-600 disabled:opacity-50"
                         >
                           Dismiss Alert
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openDetail(row.id)}
+                          className="px-3 py-1.5 rounded bg-teal-600 text-white text-xs font-medium uppercase hover:bg-teal-700"
+                        >
+                          Details
                         </button>
                       </div>
                     </td>
@@ -266,6 +289,60 @@ export function FlaggedTable({ rows, loading, search, onSearchChange, refresh }:
           setModalPayload(null)
         }}
       />
+      {detail && (
+        <div className="fixed inset-0 bg-black/40 z-40 flex justify-end" onClick={() => setDetail(null)}>
+          <div className="w-full max-w-2xl h-full bg-white shadow-xl p-6 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold">Alert #{detail.id} - {detail.target_email}</h3>
+            <p className="text-sm text-gray-600 mt-1">Status: {detail.status} | Score: {detail.score} ({detail.risk_level})</p>
+            <div className="mt-4">
+              <h4 className="font-medium">Evidence & Rule Hits</h4>
+              <pre className="text-xs bg-gray-100 p-3 rounded mt-2 overflow-auto">{JSON.stringify(detail.rule_hits, null, 2)}</pre>
+            </div>
+            <div className="mt-4">
+              <h4 className="font-medium">Timeline</h4>
+              <pre className="text-xs bg-gray-100 p-3 rounded mt-2 overflow-auto">{JSON.stringify(detail.timeline, null, 2)}</pre>
+            </div>
+            <div className="mt-4">
+              <h4 className="font-medium">Audit Log</h4>
+              <pre className="text-xs bg-gray-100 p-3 rounded mt-2 overflow-auto">{JSON.stringify(detail.audit_log, null, 2)}</pre>
+            </div>
+            <div className="mt-4">
+              <h4 className="font-medium">Notes</h4>
+              <textarea className="w-full border rounded p-2 text-sm mt-2" rows={4} value={notes} onChange={(e) => setNotes(e.target.value)} />
+              <div className="flex gap-2 mt-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await updateAlertNotes(detail.id, notes)
+                    refresh()
+                  }}
+                  className="px-3 py-1.5 rounded bg-gray-700 text-white text-xs uppercase"
+                >
+                  Save Notes
+                </button>
+                {canRespond && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={async () => { await updateAlertStatus(detail.id, 'TRIAGE'); setDetail(await getAlertDetail(detail.id)); refresh() }}
+                      className="px-3 py-1.5 rounded bg-amber-600 text-white text-xs uppercase"
+                    >
+                      Mark Triage
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => { await updateAlertStatus(detail.id, 'CLOSED'); setDetail(await getAlertDetail(detail.id)); refresh() }}
+                      className="px-3 py-1.5 rounded bg-gray-600 text-white text-xs uppercase"
+                    >
+                      Close
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }

@@ -2,13 +2,15 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
+import hashlib
+import json
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.db.models import RawEvent, NormalizedEvent, Detection, Setting
+from app.db.models import RawEvent, NormalizedEvent, Detection, Setting, PollCheckpoint
 from app.detect.mass_send import MassSendConfig, generate_mass_send_hits
 from app.detect.scoring import score_from_rule_hits, score_to_risk_level
 from app.google.reports_client import fetch_gmail_events, fetch_login_events, fetch_admin_events
@@ -18,14 +20,17 @@ from app.ingest.normalizer import (
     hash_dedupe,
 )
 
-CHECKPOINT_KEY = "last_poll_checkpoint"
+CHECKPOINT_SOURCE = "google_reports"
 
 
 def _get_checkpoint(db: Session) -> datetime:
-    row = db.execute(select(Setting).where(Setting.key == CHECKPOINT_KEY)).scalars().first()
-    if row and row.value:
+    row = db.execute(select(PollCheckpoint).where(PollCheckpoint.source == CHECKPOINT_SOURCE)).scalars().first()
+    if row and row.last_seen_event_time:
+        return row.last_seen_event_time
+    legacy = db.execute(select(Setting).where(Setting.key == "last_poll_checkpoint")).scalars().first()
+    if legacy and legacy.value:
         try:
-            return datetime.fromisoformat(row.value.replace("Z", "+00:00"))
+            return datetime.fromisoformat(legacy.value.replace("Z", "+00:00"))
         except (ValueError, TypeError):
             pass
     lookback = get_settings().lookback_minutes
@@ -33,13 +38,11 @@ def _get_checkpoint(db: Session) -> datetime:
 
 
 def _set_checkpoint(db: Session, when: datetime) -> None:
-    row = db.execute(select(Setting).where(Setting.key == CHECKPOINT_KEY)).scalars().first()
-    val = when.isoformat()
+    row = db.execute(select(PollCheckpoint).where(PollCheckpoint.source == CHECKPOINT_SOURCE)).scalars().first()
     if row:
-        row.value = val
-        row.updated_at = datetime.now(timezone.utc)
+        row.last_seen_event_time = when
     else:
-        db.add(Setting(key=CHECKPOINT_KEY, value=val))
+        db.add(PollCheckpoint(source=CHECKPOINT_SOURCE, last_seen_event_time=when))
     db.commit()
 
 
@@ -74,6 +77,27 @@ def _ingest_source(db: Session, source: str, activities: list[dict]) -> list[tup
         db.flush()
         inserted.append((raw, norm_list))
     return inserted
+
+
+def _bucket_start(dt: datetime, minutes: int) -> datetime:
+    mins = max(1, minutes)
+    floor = (dt.minute // mins) * mins
+    return dt.replace(minute=floor, second=0, microsecond=0)
+
+
+def _evidence_hash(target_email: str, rule_hits: list[dict], bucket_start: datetime) -> str:
+    core = {
+        "target_email": target_email,
+        "bucket_start": bucket_start.isoformat(),
+        "rules": [
+            {
+                "rule": h.get("rule"),
+                "params": h.get("parameters"),
+            }
+            for h in rule_hits
+        ],
+    }
+    return hashlib.sha256(json.dumps(core, sort_keys=True, default=str).encode()).hexdigest()
 
 
 def _run_detection(db: Session, window_minutes: int = 60) -> None:
@@ -126,17 +150,19 @@ def _run_detection(db: Session, window_minutes: int = 60) -> None:
                 reasons.append(f"{h['rule']}: {params}")
 
         # Find or create detection for this target in this window (merge by target + overlapping window)
+        bucket = _bucket_start(window_end, max(5, window_minutes))
+        primary_rule = (rule_hits[0]["rule"] if rule_hits else "suspicious_activity")
+        evidence_hash = _evidence_hash(target_email, rule_hits, bucket)
         existing = (
             db.query(Detection)
             .filter(Detection.target_email == target_email)
-            .filter(Detection.status == "OPEN")
-            .filter(
-                (Detection.window_end >= window_start) & (Detection.window_start <= window_end)
-            )
+            .filter(Detection.rule_id == primary_rule)
+            .filter(Detection.evidence_hash == evidence_hash)
+            .filter(Detection.time_bucket_start == bucket)
             .first()
         )
         if existing:
-            # Merge: extend window, add rule hits, recompute score
+            # Idempotent update
             all_hits = (existing.rule_hits_json or []) + rule_hits
             existing.window_start = min(existing.window_start, window_start)
             existing.window_end = max(existing.window_end, window_end)
@@ -145,6 +171,7 @@ def _run_detection(db: Session, window_minutes: int = 60) -> None:
             existing.reasons_json = (existing.reasons_json or []) + reasons
             existing.rule_hits_json = all_hits
             existing.updated_at = datetime.now(timezone.utc)
+            existing.status = existing.status if existing.status in {"CONTAINED", "CLOSED", "FALSE_POSITIVE"} else "TRIAGE"
         else:
             det = Detection(
                 target_email=target_email,
@@ -154,7 +181,10 @@ def _run_detection(db: Session, window_minutes: int = 60) -> None:
                 risk_level=risk_level,
                 reasons_json=reasons,
                 rule_hits_json=rule_hits,
-                status="OPEN",
+                status="NEW",
+                rule_id=primary_rule,
+                evidence_hash=evidence_hash,
+                time_bucket_start=bucket,
             )
             db.add(det)
     db.commit()

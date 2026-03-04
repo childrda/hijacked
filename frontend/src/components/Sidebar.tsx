@@ -13,9 +13,7 @@ export function Sidebar() {
     <aside className="w-56 min-h-screen bg-white border-r border-gray-200 flex flex-col">
       <div className="p-4 border-b border-gray-100">
         <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-gray-500 text-lg mb-2" />
-        <a href="/api/auth/login" className="text-sm text-gray-600 hover:text-gray-900 flex items-center gap-1">
-          Log Out <span className="text-xs">→</span>
-        </a>
+        <span className="text-sm text-gray-600">Workspace Monitor</span>
       </div>
       <nav className="flex-1 p-3">
         {nav.map(({ to, label, icon }) => (
