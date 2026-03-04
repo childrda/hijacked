@@ -1,13 +1,15 @@
-FROM node:20-alpine
-
+FROM node:20-alpine AS build
 WORKDIR /app
-ENV NODE_ENV=development
+
+ARG VITE_API_URL=http://localhost:8000
+ENV VITE_API_URL=${VITE_API_URL}
 
 COPY package*.json ./
-RUN npm ci --production=false
+RUN npm ci --include=dev
 
 COPY . .
 RUN npm run build
 
-EXPOSE 5173
-CMD ["npm", "run", "dev"]
+FROM nginx:alpine
+COPY --from=build /app/dist /usr/share/nginx/html
+EXPOSE 80
