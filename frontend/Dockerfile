@@ -6,9 +6,10 @@ ENV VITE_API_URL=${VITE_API_URL}
 
 COPY package*.json ./
 RUN npm ci --include=dev
+RUN npm install --no-save typescript
 
 COPY . .
-RUN npm run build
+RUN npx tsc -b && npx vite build
 
 FROM nginx:alpine
 COPY --from=build /app/dist /usr/share/nginx/html
