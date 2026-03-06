@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 
 type Props = { user: AuthUser }
 
-export function FilterScanLogPage({ user }: Props) {
+export function FilterScanLogPage({ user: _user }: Props) {
   const [rows, setRows] = useState<FilterScanLogRow[]>([])
   const [loading, setLoading] = useState(true)
   const [userFilter, setUserFilter] = useState('')

@@ -3,7 +3,7 @@ import { getIngestLogs, type IngestLogRow, type AuthUser } from '../api/client'
 
 type Props = { user: AuthUser }
 
-export function IngestLogsPage({ user }: Props) {
+export function IngestLogsPage({ user: _user }: Props) {
   const [logs, setLogs] = useState<IngestLogRow[]>([])
   const [loading, setLoading] = useState(true)
   const [expandedId, setExpandedId] = useState<number | null>(null)
