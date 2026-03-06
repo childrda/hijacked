@@ -28,7 +28,7 @@ export function LoginPage({ onLoggedIn }: Props) {
   return (
     <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
       <form onSubmit={submit} className="bg-white shadow-lg rounded-lg p-6 w-full max-w-sm">
-        <h1 className="text-lg font-semibold text-gray-800">Workspace Security Agent Login</h1>
+        <h1 className="text-lg font-semibold text-gray-800">WASP Login</h1>
         <div className="mt-4 space-y-3">
           <input
             className="w-full border rounded px-3 py-2"

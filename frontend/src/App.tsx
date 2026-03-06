@@ -46,7 +46,7 @@ export default function App() {
         <Sidebar />
         <main className="flex-1 flex flex-col">
           <header className="bg-teal-600 text-white px-8 py-4 flex justify-between items-center">
-            <h1 className="text-lg font-semibold">Workspace Security Agent - Suspicious Activity Monitor</h1>
+            <h1 className="text-lg font-semibold">WASP – Workspace Account Security Patrol</h1>
             <div className="flex items-center gap-4 text-sm">
               <span>{user.username} ({user.role})</span>
               <button type="button" onClick={doLogout} className="bg-teal-700 px-3 py-1 rounded">Logout</button>

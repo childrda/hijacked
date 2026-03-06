@@ -1,4 +1,4 @@
-# Workspace Security Agent – Suspicious Activity Monitor
+# WASP – Workspace Account Security Patrol
 
 Full-stack app that ingests Google Workspace audit events, detects suspicious mailbox changes, stores everything for analytics/retraining, and provides a UI to view flagged accounts and run containment (disable user + revoke sessions).
 
@@ -222,7 +222,7 @@ You can enable one, both, or neither. All actions are stored in the `actions` ta
 - The app sends an email to `SUPPORT_EMAIL` when a **new** detection is OPEN and score ≥ `SEVERITY_THRESHOLD`.
 - Re-email only if: risk level increases, score increases by ≥ 20 since last notify, or ≥ 12 hours since last notify.
 - Email is sent **after** any containment actions so the body reflects “Action Taken” or “Proposed Action”.
-- Subject: `[{RISK}] Workspace Security Alert: {user_email} (Score {score})`.
+- Subject: `[{RISK}] WASP Alert: {user_email} (Score {score})`.
 - If sending fails, a row is stored in `actions` with `action_type=EMAIL_NOTIFY`, `result=FAILED`, and `notified_at` stays null so the next run can retry.
 
 ## Tests

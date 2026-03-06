@@ -1,4 +1,4 @@
-"""SQLAlchemy models for workspace security agent."""
+"""SQLAlchemy models for WASP (Workspace Account Security Patrol)."""
 from __future__ import annotations
 
 from datetime import datetime

@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "workspace-security-agent"
+name = "wasp"
 version = "0.1.0"
-description = "Workspace Security Agent - Suspicious Activity Monitor"
+description = "WASP - Workspace Account Security Patrol"
 requires-python = ">=3.11"
 
 [tool.setuptools.packages.find]

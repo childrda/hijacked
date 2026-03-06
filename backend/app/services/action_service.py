@@ -88,7 +88,7 @@ def build_detection_email(
 ) -> tuple[str, str]:
     """Subject and body (text) for detection notification email."""
     risk = detection.risk_level or "MEDIUM"
-    subject = f"[{risk}] Workspace Security Alert: {detection.target_email} (Score {detection.score})"
+    subject = f"[{risk}] WASP Alert: {detection.target_email} (Score {detection.score})"
     lines = [
         f"User: {detection.target_email}",
         f"Score: {detection.score}",

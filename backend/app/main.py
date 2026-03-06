@@ -45,8 +45,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Workspace Security Agent",
-    description="Suspicious Activity Monitor",
+    title="WASP",
+    description="Workspace Account Security Patrol",
     lifespan=lifespan,
 )
 

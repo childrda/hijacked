@@ -48,8 +48,8 @@ async def test_email(
     notifier = get_notifier()
     await notifier.send(
         settings.support_email,
-        "[Workspace Security Agent] Test email",
-        "This is a test email from the Workspace Security Agent.",
+        "[WASP] Test email",
+        "This is a test email from WASP (Workspace Account Security Patrol).",
     )
     log_audit(
         db,
