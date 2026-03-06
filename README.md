@@ -1,5 +1,7 @@
 # WASP – Workspace Account Security Patrol
 
+![WASP logo](assets/wasp-logo.png)
+
 Full-stack app that ingests Google Workspace audit events, detects suspicious mailbox changes, stores everything for analytics/retraining, and provides a UI to view flagged accounts and run containment (disable user + revoke sessions).
 
 ## Stack

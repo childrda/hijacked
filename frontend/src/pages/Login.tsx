@@ -26,7 +26,8 @@ export function LoginPage({ onLoggedIn }: Props) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4">
+      <img src="/wasp-logo.png" alt="WASP" className="h-20 w-auto object-contain mb-6" />
       <form onSubmit={submit} className="bg-white shadow-lg rounded-lg p-6 w-full max-w-sm">
         <h1 className="text-lg font-semibold text-gray-800">WASP Login</h1>
         <div className="mt-4 space-y-3">
