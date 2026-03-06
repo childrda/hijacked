@@ -31,10 +31,21 @@ class LoginResponse(BaseModel):
     role: str
 
 
+def _safe_actor(username: str, max_len: int = 64) -> str:
+    """Truncate username for audit logs to avoid logging accidentally pasted passwords."""
+    return (username or "")[:max_len]
+
+
 @router.post("/login", response_model=LoginResponse)
 def login(body: LoginRequest, response: Response, db: Session = Depends(get_db)):
-    if not verify_login(body.username, body.password):
-        log_audit(db, actor=body.username, action="AUTH_LOGIN", result="fail", error="invalid_credentials")
+    try:
+        if not verify_login(body.username, body.password):
+            log_audit(db, actor=_safe_actor(body.username), action="AUTH_LOGIN", result="fail", error="invalid_credentials")
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+    except HTTPException:
+        raise
+    except Exception:
+        log_audit(db, actor=_safe_actor(body.username), action="AUTH_LOGIN", result="fail", error="login_error")
         raise HTTPException(status_code=401, detail="Invalid credentials")
     role = user_role(body.username)
     token = create_access_token(data={"sub": body.username, "role": role})
@@ -45,11 +56,11 @@ def login(body: LoginRequest, response: Response, db: Session = Depends(get_db))
         value=token,
         httponly=True,
         secure=s.is_prod,
-        samesite="lax",
+        samesite="strict",
         expires=expires,
         path="/",
     )
-    log_audit(db, actor=body.username, action="AUTH_LOGIN", result="success", payload_summary={"role": role})
+    log_audit(db, actor=_safe_actor(body.username), action="AUTH_LOGIN", result="success", payload_summary={"role": role})
     return LoginResponse(username=body.username, role=role)
 
 

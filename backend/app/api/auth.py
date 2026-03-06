@@ -60,9 +60,9 @@ async def get_current_user_optional(
 async def get_current_user(
     user: dict[str, Any] | None = Depends(get_current_user_optional),
 ) -> dict[str, Any]:
-    if get_settings().is_prod and not user:
+    if not user:
         raise HTTPException(status_code=401, detail="Authentication required")
-    return user or {"username": "dev", "role": "responder"}
+    return user
 
 
 async def require_responder(

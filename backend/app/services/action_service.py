@@ -4,12 +4,14 @@ from __future__ import annotations
 from datetime import datetime, timezone, timedelta
 from typing import Any
 
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db.models import Detection, Action
 from app.actions.containment import run_containment, result_from_details
 from app.detect.rules import get_label
+from app.services.audit_service import log_audit
 
 
 async def disable_account(
@@ -20,20 +22,51 @@ async def disable_account(
     """
     For each detection: run containment (or propose), record action, update detection status.
     If ACTION_FLAG=false, mode=PROPOSED and we don't call Directory API.
+    Circuit breaker: if DISABLE_ACCOUNT successes in the last SUSPENSION_RATE_LIMIT_MINUTES exceed
+    SUSPENSION_RATE_LIMIT_MAX, no further suspensions run until the window clears.
     """
     settings = get_settings()
     mode = "TAKEN" if settings.action_flag else "PROPOSED"
+
+    # Circuit breaker: when we would actually run containment, enforce global rate limit
+    if mode == "TAKEN" and alert_ids:
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=settings.suspension_rate_limit_minutes)
+        recent_successes = (
+            db.query(Action)
+            .filter(Action.action_type == "DISABLE_ACCOUNT")
+            .filter(Action.result == "SUCCESS")
+            .filter(Action.created_at >= cutoff)
+            .count()
+        )
+        if recent_successes >= settings.suspension_rate_limit_max:
+            log_audit(
+                db,
+                actor="system",
+                action="SUSPENSION_RATE_LIMIT_TRIPPED",
+                result="fail",
+                error="circuit_breaker",
+                payload_summary={"recent_successes": recent_successes, "limit": settings.suspension_rate_limit_max},
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="Suspension rate limit exceeded; circuit breaker tripped. No further accounts will be suspended until the window clears.",
+            )
+
     results = []
     for det_id in alert_ids:
         det = db.get(Detection, det_id)
         if not det:
+            continue
+        # Use only DB-backed target_email; reject empty or invalid to prevent injection.
+        target_email = (det.target_email or "").strip()
+        if not target_email or "@" not in target_email:
             continue
         if det.status in {"CONTAINED", "CLOSED"}:
             continue
         # Cooldown to avoid repeated disable action on same account.
         recent_action = (
             db.query(Action)
-            .filter(Action.target_email == det.target_email)
+            .filter(Action.target_email == target_email)
             .filter(Action.action_type == "DISABLE_ACCOUNT")
             .filter(Action.created_at >= datetime.now(timezone.utc) - timedelta(minutes=settings.action_cooldown_minutes))
             .first()
@@ -42,13 +75,13 @@ async def disable_account(
             results.append(
                 {
                     "detection_id": det_id,
-                    "target_email": det.target_email,
+                    "target_email": target_email,
                     "result": "FAILED",
                     "error": "cooldown_active",
                 }
             )
             continue
-        target = det.target_email
+        target = target_email
         details = run_containment(db, target, det_id, mode=mode)
         result = result_from_details(details)
         time_bucket_start = datetime.now(timezone.utc).replace(second=0, microsecond=0)

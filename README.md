@@ -62,6 +62,10 @@ Full-stack app that ingests Google Workspace audit events, detects suspicious ma
 | `SUPPORT_EMAIL` | Email that receives alerts and test emails |
 | `ACTION_FLAG` | `true` = run containment when triggered; `false` = record proposed actions only |
 | `ACTION_COOLDOWN_MINUTES` | Prevent repeated disable actions on same account within cooldown window |
+| `SUSPENSION_RATE_LIMIT_MAX` | Max DISABLE_ACCOUNT successes in the window; circuit breaker trips above this (default 5) |
+| `SUSPENSION_RATE_LIMIT_MINUTES` | Rolling window for suspension rate limit (default 60) |
+| `PROTECTED_EMAILS` | Comma-separated emails that must never be suspended (e.g. `admin@mycorp.com`) |
+| `PROTECTED_DOMAINS` | Comma-separated domain suffixes (e.g. `mycorp.com`) whose users are never suspended |
 | `ADMIN_USERNAME`, `ADMIN_PASSWORD` | Internal login credentials used by `/api/auth/login` |
 | `RESPONDER_USERS` | Comma-separated usernames with responder privileges |
 | `SESSION_EXPIRY_HOURS` | Session cookie JWT lifetime in hours (default 8) |
@@ -175,6 +179,31 @@ gcloud scheduler jobs create http hijacked-poll \
   - **`ENABLE_GOOGLE_WORKSPACE=true`** (default: true): Suspend the user (Directory API `users.update` with `suspended=true`), force sign-out (`users.signOut`), and revoke tokens (`tokens.list` + `tokens.delete`).
 
 You can enable one, both, or neither. All actions are stored in the `actions` table with result and details (including AD and Google steps, or “skipped” with reason when a backend is disabled).
+
+## Blast Radius Mitigation
+
+To limit damage if WASP is compromised or a rule misfires, use the following deployment practices and config.
+
+### Rate limiting (circuit breaker)
+
+- **`SUSPENSION_RATE_LIMIT_MAX`** (default 5) and **`SUSPENSION_RATE_LIMIT_MINUTES`** (default 60): If the number of successful DISABLE_ACCOUNT actions in the last N minutes exceeds the max, WASP returns **503** and does not suspend any more accounts until the window clears. A critical audit event `SUSPENSION_RATE_LIMIT_TRIPPED` is logged. This prevents a compromised app or a bad rule from shutting down the entire org.
+
+### Protected list (do-not-suspend)
+
+- **`PROTECTED_EMAILS`**: Comma-separated exact emails (e.g. `admin@mycorp.com`) that must never be suspended. Containment skips them and records result `SKIPPED`.
+- **`PROTECTED_DOMAINS`**: Comma-separated domain suffixes (e.g. `mycorp.com`). Any user whose email domain matches is skipped. Use for admin or critical OUs.
+
+### Google Workspace protections
+
+Domain-wide delegation for `https://www.googleapis.com/auth/admin.directory.user` allows suspending any user, including Super Admins. To reduce blast radius:
+
+- **Do not** grant the service account the ability to suspend Super Admins. Prefer assigning a **custom admin role** to the service account (or the user used for `GOOGLE_WORKSPACE_ADMIN_USER`) that only allows managing users in **specific non-admin Organizational Units (OUs)**. Avoid granting full domain-wide delegation over all users; scope the role to OUs that contain standard users only, and explicitly exclude Super Admin and other privileged OUs.
+
+### Active Directory protections
+
+The `AD_BIND_DN` service account can disable users via LDAP. To reduce blast radius:
+
+- Grant **"Write userAccountControl"** (or the minimum right needed to set `ACCOUNTDISABLE`) only over **specific OUs** (e.g. `OU=Standard Users`). Explicitly **deny** permissions over `OU=Domain Admins`, service account OUs, and other high-privilege OUs so that even if WASP is compromised, it cannot disable those accounts.
 
 ## Mass Outbound Email Burst Detection
 

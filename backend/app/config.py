@@ -32,10 +32,14 @@ class Settings(BaseSettings):
     support_email: str = "support@domain.tld"
     action_flag: bool = False
     action_cooldown_minutes: int = 30
+    suspension_rate_limit_max: int = 5      # max DISABLE_ACCOUNT successes in the window; circuit breaker trips above this
+    suspension_rate_limit_minutes: int = 60  # rolling window for suspension rate limit
+    protected_emails: str = ""               # comma-separated emails that must never be suspended (e.g. admin@mycorp.com)
+    protected_domains: str = ""               # comma-separated domain suffixes (e.g. mycorp.com) whose users are never suspended
     enable_google_workspace: bool = True   # when True and action_flag=True, suspend/sign-out/revoke in Google
     enable_active_directory: bool = False  # when True and action_flag=True, disable user in AD (requires AD_* config)
     admin_username: str = "admin"
-    admin_password: str = "admin"
+    admin_password: str = ""
     responder_users: str = "admin"
     session_expiry_hours: int = 8
 
@@ -121,10 +125,20 @@ class Settings(BaseSettings):
     def responder_users_list(self) -> list[str]:
         return [u.strip() for u in self.responder_users.split(",") if u.strip()]
 
+    @property
+    def protected_emails_list(self) -> list[str]:
+        return [e.strip().lower() for e in self.protected_emails.split(",") if e.strip()]
+
+    @property
+    def protected_domains_list(self) -> list[str]:
+        return [d.strip().lower() for d in self.protected_domains.split(",") if d.strip()]
+
     def ensure_secure(self) -> None:
+        if not (self.admin_password or "").strip():
+            raise ValueError("ADMIN_PASSWORD must be set to a non-empty value in all environments.")
+        if self.secret_key == "dev-secret-change-in-prod" or len(self.secret_key) < 32:
+            raise ValueError("SECRET_KEY must be set to a strong value (>=32 chars) in all environments.")
         if self.is_prod:
-            if self.secret_key == "dev-secret-change-in-prod" or len(self.secret_key) < 32:
-                raise ValueError("In production, SECRET_KEY must be set to a strong value (>=32 chars).")
             if not self.cors_origin_list:
                 raise ValueError("In production, CORS_ORIGINS must include at least one explicit origin.")
             if self.action_flag:
