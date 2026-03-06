@@ -2,6 +2,9 @@ import { Link, useLocation } from 'react-router-dom'
 
 const nav = [
   { to: '/', label: 'Dashboard', icon: '▦' },
+  { to: '/mailbox-filters', label: 'Mailbox Filters', icon: '✉' },
+  { to: '/filter-scan-log', label: 'Filter scan log', icon: '▤' },
+  { to: '/logs/ingest', label: 'Google audit logs', icon: '◫' },
   { to: '/account-rules', label: 'Account Rules', icon: '≡' },
   { to: '/audit-logs', label: 'Audit Logs', icon: '▤' },
   { to: '/settings', label: 'Settings', icon: '⚙' },

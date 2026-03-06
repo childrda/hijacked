@@ -3,6 +3,9 @@ import { useEffect, useState } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { Dashboard } from './pages/Dashboard'
 import { LoginPage } from './pages/Login'
+import { MailboxFiltersPage } from './pages/MailboxFilters'
+import { IngestLogsPage } from './pages/IngestLogs'
+import { FilterScanLogPage } from './pages/FilterScanLog'
 import { me, logout } from './api/client'
 
 function Placeholder({ name }: { name: string }) {
@@ -58,6 +61,9 @@ export default function App() {
           <div className="flex-1 p-8">
             <Routes>
               <Route path="/" element={<Dashboard user={user} />} />
+              <Route path="/mailbox-filters" element={<MailboxFiltersPage user={user} />} />
+              <Route path="/filter-scan-log" element={<FilterScanLogPage user={user} />} />
+              <Route path="/logs/ingest" element={<IngestLogsPage user={user} />} />
               <Route path="/account-rules" element={<Placeholder name="Account Rules" />} />
               <Route path="/audit-logs" element={<Placeholder name="Audit Logs" />} />
               <Route path="/settings" element={<Placeholder name="Settings" />} />

@@ -86,6 +86,24 @@ class Settings(BaseSettings):
     poll_max_runtime_seconds: int = 240
     poll_mode: str = "scheduler"  # scheduler | internal
 
+    # Gmail mailbox filter inspection (state inspection, separate from audit log polling)
+    gmail_filter_inspection_enabled: bool = False
+    filter_scan_enabled: bool = False
+    filter_scan_interval_seconds: int = 3600   # default 60 min
+    filter_scan_user_scope: str = ""           # comma-separated user emails, or leave empty to derive from domain
+    filter_risk_keywords: str = "security,alert,password,admin,phishing,login,verification,account"
+    filter_approval_required: bool = True
+    filter_external_forwarding_only: bool = False  # if True, only flag filters that forward externally
+    filter_risky_actions: str = "delete,mark_read,archive,forward_external"  # comma-separated
+
+    @property
+    def filter_risk_keywords_list(self) -> list[str]:
+        return [k.strip().lower() for k in self.filter_risk_keywords.split(",") if k.strip()]
+
+    @property
+    def filter_scan_user_scope_list(self) -> list[str]:
+        return [e.strip().lower() for e in self.filter_scan_user_scope.split(",") if e.strip()]
+
     @field_validator("google_credentials_json", mode="before")
     @classmethod
     def load_google_creds(cls, v: Any) -> str:

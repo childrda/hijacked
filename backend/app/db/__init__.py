@@ -10,6 +10,8 @@ from app.db.models import (
     AuditLog,
     PollCheckpoint,
     PollLock,
+    MailboxFilter,
+    FilterScanLog,
 )
 from app.db.session import get_db, get_db_context, init_db, SessionLocal, engine
 
@@ -25,6 +27,8 @@ __all__ = [
     "AuditLog",
     "PollCheckpoint",
     "PollLock",
+    "MailboxFilter",
+    "FilterScanLog",
     "get_db",
     "get_db_context",
     "init_db",

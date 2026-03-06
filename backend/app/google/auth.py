@@ -16,6 +16,10 @@ SCOPES_DIRECTORY = [
     "https://www.googleapis.com/auth/admin.directory.user",
     "https://www.googleapis.com/auth/admin.directory.user.security",
 ]
+# Narrow scope for Gmail filter inspection only (users.settings.filters.list)
+SCOPES_GMAIL_FILTERS = [
+    "https://www.googleapis.com/auth/gmail.settings.basic",
+]
 
 
 def get_credentials(scopes: list[str] | None = None) -> service_account.Credentials:

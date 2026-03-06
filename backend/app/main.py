@@ -16,12 +16,14 @@ from sqlalchemy import text, select
 
 from app.config import get_settings
 from app.db.session import init_db, SessionLocal
-from app.db.models import Detection, PollLock
+from app.db.models import Detection, PollLock, Setting
 from app.api.routes_dashboard import router as dashboard_router
 from app.api.routes_alerts import router as alerts_router
 from app.api.routes_actions import router as actions_router
 from app.api.routes_settings import router as settings_router
 from app.api.routes_auth import router as auth_router
+from app.api.routes_filters import router as filters_router
+from app.api.routes_logs import router as logs_router
 from app.api.auth import get_current_user_optional
 from app.google.auth import get_credentials, SCOPES_REPORTS
 from app.services.audit_service import log_audit
@@ -64,6 +66,8 @@ app.include_router(alerts_router)
 app.include_router(actions_router)
 app.include_router(settings_router)
 app.include_router(auth_router)
+app.include_router(filters_router)
+app.include_router(logs_router)
 
 
 @app.middleware("http")
@@ -157,9 +161,10 @@ async def run_poll_and_notify(*, force: bool = False, actor: str = "system") -> 
 
 
 def _run_poll_and_notify_sync():
-    """Sync job body: poll once, then send emails for detections that need it."""
+    """Sync job body: poll once, send emails for detections, then run filter scan if interval elapsed."""
     from app.ingest.poller import poll_once
     from app.services.action_service import should_send_detection_email, send_detection_notification
+    from app.mailbox_filters.sync import run_filter_scan
 
     db = SessionLocal()
     try:
@@ -177,6 +182,23 @@ def _run_poll_and_notify_sync():
                     asyncio.run(send_detection_notification(db, det.id, action_taken=False))
         except Exception as e:
             logger.exception("Notify failed: %s", e)
+        # Gmail filter inspection: run if enabled and interval elapsed (default 60 min)
+        try:
+            s = get_settings()
+            if s.gmail_filter_inspection_enabled and s.filter_scan_enabled and s.filter_scan_user_scope_list:
+                row = db.query(Setting).filter(Setting.key == "filter_scan_last_run").first()
+                last_run = float(row.value) if row and row.value else 0.0
+                now_ts = datetime.now(timezone.utc).timestamp()
+                if now_ts - last_run >= s.filter_scan_interval_seconds:
+                    run_filter_scan(db)
+                    if row:
+                        row.value = str(now_ts)
+                        row.updated_at = datetime.now(timezone.utc)
+                    else:
+                        db.add(Setting(key="filter_scan_last_run", value=str(now_ts)))
+                    db.commit()
+        except Exception as e:
+            logger.exception("Filter scan failed: %s", e)
     finally:
         db.close()
 

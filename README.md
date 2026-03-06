@@ -104,7 +104,24 @@ Full-stack app that ingests Google Workspace audit events, detects suspicious ma
 | `POLL_JITTER_SECONDS` | Random jitter for internal loop |
 | `POLL_LOCK_TTL_SECONDS` | Poll lock TTL to prevent overlapping runs |
 | `POLL_MAX_RUNTIME_SECONDS` | Runtime guardrail for one poll pass |
+| `GMAIL_FILTER_INSPECTION_ENABLED` | Enable Gmail mailbox filter inspection (separate from audit log polling) |
+| `FILTER_SCAN_ENABLED` | Run filter scan when cron/poll runs (requires FILTER_SCAN_USER_SCOPE) |
+| `FILTER_SCAN_INTERVAL_SECONDS` | How often to run filter scan (default 3600 = 60 min) |
+| `FILTER_SCAN_USER_SCOPE` | Comma-separated user emails to inspect (e.g. `user1@domain.com,user2@domain.com`) |
+| `FILTER_RISK_KEYWORDS` | Comma-separated keywords in criteria that make a filter risky (e.g. security, password) |
+| `FILTER_EXTERNAL_FORWARDING_ONLY` | If true, only flag filters that forward externally |
 | `UI_BASE_URL` | Base URL for links in emails (e.g. `https://your-ui.example.com`) |
+
+## Gmail mailbox filter inspection
+
+WASP can inspect Gmail filters (state inspection) via the Gmail API, because admin/audit logs do not reliably expose user-created filter events. This is **separate** from audit log polling.
+
+- **Enable:** Set `GMAIL_FILTER_INSPECTION_ENABLED=true` and `FILTER_SCAN_ENABLED=true`. Add `https://www.googleapis.com/auth/gmail.settings.basic` to your service account’s Domain-Wide Delegation scopes.
+- **Users:** Set `FILTER_SCAN_USER_SCOPE` to a comma-separated list of user emails to scan (e.g. high-risk or pilot users).
+- **Frequency:** The filter scan runs when the poll runs (cron or internal loop), but only if at least `FILTER_SCAN_INTERVAL_SECONDS` (default 3600 = 60 min) have passed since the last scan.
+- **Risky filters:** A filter is considered risky if it deletes, archives, or marks messages read; forwards externally; or targets security-related criteria (subject/from/query matching `FILTER_RISK_KEYWORDS`). Risk is rule-based and configurable.
+- **Fingerprinting:** Each filter is normalized and hashed (fingerprint). Trust is by fingerprint, not Gmail filter ID: if a user changes the filter, the fingerprint changes and it must be reviewed again.
+- **UI:** **Mailbox Filters** in the sidebar lists filters, risk, status (new / approved / ignored / blocked / removed). Responders can approve, ignore, or block; rescan triggers an immediate scan for a user. Alerts are generated only for new risky filters, or when an approved/benign filter changes into something risky.
 
 ## Google Workspace setup (Domain-Wide Delegation)
 
@@ -113,6 +130,7 @@ Full-stack app that ingests Google Workspace audit events, detects suspicious ma
    - `https://www.googleapis.com/auth/admin.reports.audit.readonly`
    - `https://www.googleapis.com/auth/admin.directory.user`
    - `https://www.googleapis.com/auth/admin.directory.user.security`
+   - `https://www.googleapis.com/auth/gmail.settings.basic` (only if using Gmail mailbox filter inspection)
 3. Put the service account JSON in `GOOGLE_CREDENTIALS_JSON` and set `GOOGLE_WORKSPACE_ADMIN_USER` to a super-admin email.
 
 ## Running locally (no Docker)
@@ -242,6 +260,7 @@ The `AD_BIND_DN` service account can disable users via LDAP. To reduce blast rad
 
 - **Safe defaults:** keep `ACTION_FLAG=false` in production until playbooks are validated.
 - **Least privilege:** only usernames in `RESPONDER_USERS` can run containment and status transitions.
+- **Login from new location:** each successful login records the client IP (from the request, or `X-Forwarded-For` when behind a proxy). If the user has never logged in from that IP before, an extra audit event `AUTH_LOGIN_NEW_LOCATION` is written so you can monitor or alert on first-time locations.
 - **Secret rotation:** rotate `ADMIN_PASSWORD`, `CRON_API_KEY`, `SECRET_KEY`, SMTP credentials on a schedule; restart service after rotation.
 - **Poll mode:**
   - `POLL_MODE=scheduler` (recommended): no internal loop; use Cloud Scheduler cadence.

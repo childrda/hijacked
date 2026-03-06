@@ -124,3 +124,114 @@ export async function updateAlertNotes(id: number, notes: string): Promise<{ ok:
   if (!r.ok) throw new Error('Failed to update notes');
   return r.json();
 }
+
+export type MailboxFilterRow = {
+  id: number;
+  user_email: string;
+  gmail_filter_id: string;
+  fingerprint: string;
+  criteria_json: Record<string, unknown> | null;
+  action_json: Record<string, unknown> | null;
+  is_risky: boolean;
+  risk_reasons_json: string[] | null;
+  status: string;
+  first_seen_at: string | null;
+  last_seen_at: string | null;
+  approved_by: string | null;
+  approved_at: string | null;
+  removed_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export async function listFilters(params: { user_email?: string; status?: string; risky_only?: boolean } = {}): Promise<MailboxFilterRow[]> {
+  const sp = new URLSearchParams();
+  if (params.user_email) sp.set('user_email', params.user_email);
+  if (params.status) sp.set('status', params.status);
+  if (params.risky_only) sp.set('risky_only', 'true');
+  const r = await apiFetch(`/filters?${sp}`);
+  if (!r.ok) throw new Error('Failed to fetch filters');
+  return r.json();
+}
+
+export async function getFilter(id: number): Promise<MailboxFilterRow> {
+  const r = await apiFetch(`/filters/${id}`);
+  if (!r.ok) throw new Error('Failed to fetch filter');
+  return r.json();
+}
+
+export async function approveFilter(id: number): Promise<MailboxFilterRow> {
+  const r = await apiFetch(`/filters/${id}/approve`, { method: 'POST' });
+  if (!r.ok) throw new Error('Failed to approve filter');
+  return r.json();
+}
+
+export async function ignoreFilter(id: number): Promise<MailboxFilterRow> {
+  const r = await apiFetch(`/filters/${id}/ignore`, { method: 'POST' });
+  if (!r.ok) throw new Error('Failed to ignore filter');
+  return r.json();
+}
+
+export async function blockFilter(id: number): Promise<MailboxFilterRow> {
+  const r = await apiFetch(`/filters/${id}/block`, { method: 'POST' });
+  if (!r.ok) throw new Error('Failed to block filter');
+  return r.json();
+}
+
+export async function rescanFilters(user_email: string): Promise<{ ok: boolean; filters_seen: number; new_alerts: number }> {
+  const r = await apiFetch('/filters/rescan', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_email }),
+  });
+  if (!r.ok) throw new Error('Failed to rescan');
+  return r.json();
+}
+
+export type IngestLogRow = {
+  id: number;
+  source: string;
+  event_time: string | null;
+  actor_email: string | null;
+  target_email: string | null;
+  ip: string | null;
+  user_agent: string | null;
+  geo: string | null;
+  payload_json: Record<string, unknown> | null;
+  created_at: string | null;
+};
+
+export async function getIngestLogs(params: {
+  source?: string;
+  target_email?: string;
+  since?: string;
+  limit?: number;
+} = {}): Promise<IngestLogRow[]> {
+  const sp = new URLSearchParams();
+  if (params.source) sp.set('source', params.source);
+  if (params.target_email) sp.set('target_email', params.target_email);
+  if (params.since) sp.set('since', params.since);
+  if (params.limit != null) sp.set('limit', String(params.limit));
+  const r = await apiFetch(`/logs/ingest?${sp}`);
+  if (!r.ok) throw new Error('Failed to fetch ingest logs');
+  return r.json();
+}
+
+export type FilterScanLogRow = {
+  id: number;
+  user_email: string;
+  scanned_at: string | null;
+  filters_count: number;
+  success: boolean;
+  error_message: string | null;
+  created_at: string | null;
+};
+
+export async function getFilterScanLog(params: { user_email?: string; limit?: number } = {}): Promise<FilterScanLogRow[]> {
+  const sp = new URLSearchParams();
+  if (params.user_email) sp.set('user_email', params.user_email);
+  if (params.limit != null) sp.set('limit', String(params.limit));
+  const r = await apiFetch(`/filters/scan-log?${sp}`);
+  if (!r.ok) throw new Error('Failed to fetch filter scan log');
+  return r.json();
+}
