@@ -197,6 +197,10 @@ export type IngestLogRow = {
   ip: string | null;
   user_agent: string | null;
   geo: string | null;
+  ip_address: string | null;
+  region_code: string | null;
+  subdivision_code: string | null;
+  ip_asn: string | number | null;
   payload_json: Record<string, unknown> | null;
   created_at: string | null;
 };
