@@ -78,6 +78,16 @@ export async function disableAccount(alertIds: number[], reason = ''): Promise<{
   return r.json();
 }
 
+export async function disableAccountByEmail(userEmail: string, reason = ''): Promise<{ actions: unknown[]; mode: string }> {
+  const r = await apiFetch(`/actions/disable-account-by-email`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_email: userEmail, reason }),
+  });
+  if (!r.ok) throw new Error('Failed to disable account');
+  return r.json();
+}
+
 export async function login(username: string, password: string): Promise<AuthUser> {
   const r = await apiFetch('/auth/login', {
     method: 'POST',
@@ -175,6 +185,12 @@ export async function ignoreFilter(id: number): Promise<MailboxFilterRow> {
 export async function blockFilter(id: number): Promise<MailboxFilterRow> {
   const r = await apiFetch(`/filters/${id}/block`, { method: 'POST' });
   if (!r.ok) throw new Error('Failed to block filter');
+  return r.json();
+}
+
+export async function resetFilterStatus(id: number): Promise<MailboxFilterRow> {
+  const r = await apiFetch(`/filters/${id}/reset-status`, { method: 'POST' });
+  if (!r.ok) throw new Error('Failed to reset filter status');
   return r.json();
 }
 

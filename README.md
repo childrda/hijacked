@@ -57,6 +57,8 @@ Full-stack app that ingests Google Workspace audit events, detects suspicious ma
 
 ## Config (.env)
 
+**Docker:** The backend reads `.env` from the **project root** (same directory as `docker-compose.yml`). If you use `backend/.env`, copy the variables you need into a root `.env` or set them in `docker-compose.yml`. After changing `RESPONDER_USERS` or other auth settings, restart the backend and **log out and log in again** so your session gets the new role.
+
 | Variable | Description |
 |----------|-------------|
 | `GOOGLE_CREDENTIALS_JSON` | Service account JSON (string or path). Required when `ENABLE_GOOGLE_WORKSPACE=true` and for Google ingest. |

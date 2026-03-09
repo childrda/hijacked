@@ -113,6 +113,76 @@ async def disable_account(
     return {"actions": results, "mode": mode}
 
 
+async def disable_account_by_email(
+    db: Session,
+    user_email: str,
+    reason: str = "",
+) -> dict[str, Any]:
+    """
+    Run containment for a user by email (e.g. from Mailbox Filters when there is no alert).
+    Same protections as disable_account: rate limit, cooldown, protected list, ACTION_FLAG.
+    Records an Action with detection_id=None.
+    """
+    settings = get_settings()
+    mode = "TAKEN" if settings.action_flag else "PROPOSED"
+    target_email = (user_email or "").strip().lower()
+    if not target_email or "@" not in target_email:
+        raise HTTPException(status_code=400, detail="Invalid user_email")
+
+    if mode == "TAKEN":
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=settings.suspension_rate_limit_minutes)
+        recent_successes = (
+            db.query(Action)
+            .filter(Action.action_type == "DISABLE_ACCOUNT")
+            .filter(Action.result == "SUCCESS")
+            .filter(Action.created_at >= cutoff)
+            .count()
+        )
+        if recent_successes >= settings.suspension_rate_limit_max:
+            log_audit(
+                db,
+                actor="system",
+                action="SUSPENSION_RATE_LIMIT_TRIPPED",
+                result="fail",
+                error="circuit_breaker",
+                payload_summary={"recent_successes": recent_successes, "limit": settings.suspension_rate_limit_max},
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="Suspension rate limit exceeded; circuit breaker tripped.",
+            )
+
+    cooldown_cutoff = datetime.now(timezone.utc) - timedelta(minutes=settings.action_cooldown_minutes)
+    recent = (
+        db.query(Action)
+        .filter(Action.target_email == target_email)
+        .filter(Action.action_type == "DISABLE_ACCOUNT")
+        .filter(Action.created_at >= cooldown_cutoff)
+        .first()
+    )
+    if recent:
+        return {
+            "actions": [{"target_email": target_email, "result": "FAILED", "error": "cooldown_active"}],
+            "mode": mode,
+        }
+
+    details = run_containment(db, target_email, detection_id=None, mode=mode)
+    result = result_from_details(details)
+    time_bucket_start = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+    act = Action(
+        detection_id=None,
+        target_email=target_email,
+        action_type="DISABLE_ACCOUNT",
+        mode=mode,
+        result=result,
+        details_json=details,
+        time_bucket_start=time_bucket_start,
+    )
+    db.add(act)
+    db.commit()
+    return {"actions": [{"target_email": target_email, "result": result}], "mode": mode}
+
+
 def build_detection_email(
     detection: Detection,
     action_taken: bool,

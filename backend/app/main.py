@@ -36,6 +36,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     settings = get_settings()
     settings.ensure_secure()
+    logger.info("Responder users (full access): %s", ", ".join(settings.responder_users_list) or "(none)")
     init_db()
     app.state.internal_poll_task = None
     if settings.poll_mode == "internal" and settings.poll_enabled_effective:

@@ -159,6 +159,30 @@ def ignore_filter(
     return _filter_to_item(mf)
 
 
+@router.post("/{filter_id}/reset-status")
+def reset_filter_status(
+    filter_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_responder),
+):
+    """Set filter status back to 'new' (e.g. to un-ignore)."""
+    mf = db.get(MailboxFilter, filter_id)
+    if not mf:
+        raise HTTPException(status_code=404, detail="Filter not found")
+    mf.status = "new"
+    mf.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    log_audit(
+        db,
+        actor=current_user.get("username", "unknown"),
+        action="FILTER_RESET_STATUS",
+        result="success",
+        target_user=mf.user_email,
+        payload_summary={"filter_id": filter_id, "fingerprint": mf.fingerprint},
+    )
+    return _filter_to_item(mf)
+
+
 @router.post("/{filter_id}/block")
 def block_filter(
     filter_id: int,

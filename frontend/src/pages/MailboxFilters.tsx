@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   listFilters,
   getFilter,
   approveFilter,
   ignoreFilter,
   blockFilter,
+  resetFilterStatus,
   rescanFilters,
+  disableAccountByEmail,
   type MailboxFilterRow,
   type AuthUser,
 } from '../api/client'
@@ -17,18 +20,20 @@ export function MailboxFiltersPage({ user }: Props) {
   const [loading, setLoading] = useState(true)
   const [detail, setDetail] = useState<MailboxFilterRow | null>(null)
   const [riskyOnly, setRiskyOnly] = useState(false)
+  const [statusFilter, setStatusFilter] = useState<string>('')
   const [rescanEmail, setRescanEmail] = useState('')
   const [rescanBusy, setRescanBusy] = useState(false)
+  const [disableBusy, setDisableBusy] = useState(false)
 
   const load = () => {
     setLoading(true)
-    listFilters({ risky_only: riskyOnly })
+    listFilters({ risky_only: riskyOnly, status: statusFilter || undefined })
       .then(setFilters)
       .catch(() => setFilters([]))
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { load() }, [riskyOnly])
+  useEffect(() => { load() }, [riskyOnly, statusFilter])
 
   const openDetail = (id: number) => {
     getFilter(id).then(setDetail).catch(() => setDetail(null))
@@ -48,6 +53,9 @@ export function MailboxFiltersPage({ user }: Props) {
   const handleBlock = (id: number) => {
     blockFilter(id).then(updateFilter).then(() => setDetail(null)).catch(alert)
   }
+  const handleResetStatus = (id: number) => {
+    resetFilterStatus(id).then(updateFilter).then(() => setDetail(null)).catch(alert)
+  }
 
   const handleRescan = () => {
     if (!rescanEmail.trim()) return
@@ -58,13 +66,25 @@ export function MailboxFiltersPage({ user }: Props) {
       .finally(() => setRescanBusy(false))
   }
 
+  const handleDisableAccount = (userEmail: string) => {
+    if (!userEmail || !window.confirm(`Disable account and revoke sessions for ${userEmail}? This will suspend the user in Google (and AD if configured).`)) return
+    setDisableBusy(true)
+    disableAccountByEmail(userEmail)
+      .then((r) => {
+        const msg = r.mode === 'TAKEN' ? 'Account disabled and sessions revoked.' : 'Action recorded (proposed). Set ACTION_FLAG=true to run for real.'
+        alert(msg)
+      })
+      .catch((e) => alert(e?.message || 'Failed to disable account'))
+      .finally(() => setDisableBusy(false))
+  }
+
   const isResponder = user?.role === 'responder'
 
   return (
     <div>
       <h2 className="text-xl font-semibold text-gray-800 mb-4">Mailbox Filters</h2>
       <p className="text-sm text-gray-600 mb-4">
-        Gmail filter inspection: risky filters (delete, archive, mark read, forward externally, or security-related criteria) are listed. Approve to stop alerting unless the filter changes.
+        Gmail filter inspection: risky filters (delete, archive, mark read, forward externally, or security-related criteria) are listed. Use &quot;View alerts&quot; to see alerts for that user and take containment actions on the dashboard; responders can Approve/Block here or Disable account to suspend the user and revoke sessions.
       </p>
 
       <div className="flex flex-wrap items-center gap-4 mb-4">
@@ -75,6 +95,20 @@ export function MailboxFiltersPage({ user }: Props) {
             onChange={(e) => setRiskyOnly(e.target.checked)}
           />
           Risky only
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <span>Status:</span>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="border rounded px-2 py-1 text-sm"
+          >
+            <option value="">All</option>
+            <option value="new">new</option>
+            <option value="ignored">ignored</option>
+            <option value="approved">approved</option>
+            <option value="blocked">blocked</option>
+          </select>
         </label>
         {isResponder && (
           <div className="flex items-center gap-2">
@@ -138,11 +172,29 @@ export function MailboxFiltersPage({ user }: Props) {
                     >
                       Detail
                     </button>
+                    <Link
+                      to={`/?search=${encodeURIComponent(f.user_email)}`}
+                      className="text-teal-600 hover:underline mr-2"
+                    >
+                      View alerts
+                    </Link>
+                    {f.status === 'ignored' && isResponder && (
+                      <button type="button" onClick={() => handleResetStatus(f.id)} className="text-teal-600 hover:underline mr-2">Un-ignore</button>
+                    )}
                     {isResponder && (
                       <>
                         <button type="button" onClick={() => handleApprove(f.id)} className="text-green-600 hover:underline mr-2">Approve</button>
                         <button type="button" onClick={() => handleIgnore(f.id)} className="text-gray-600 hover:underline mr-2">Ignore</button>
-                        <button type="button" onClick={() => handleBlock(f.id)} className="text-red-600 hover:underline">Block</button>
+                        <button type="button" onClick={() => handleBlock(f.id)} className="text-red-600 hover:underline mr-2">Block</button>
+                        <button
+                          type="button"
+                          onClick={() => handleDisableAccount(f.user_email)}
+                          disabled={disableBusy}
+                          className="text-red-600 hover:underline font-medium"
+                          title="Disable account and revoke sessions"
+                        >
+                          Disable account
+                        </button>
                       </>
                     )}
                   </td>
@@ -171,12 +223,31 @@ export function MailboxFiltersPage({ user }: Props) {
               <dt className="text-gray-500">Action</dt><dd><pre className="bg-gray-50 p-2 rounded text-xs overflow-auto">{JSON.stringify(detail.action_json, null, 2)}</pre></dd>
               <dt className="text-gray-500">Approved by</dt><dd>{detail.approved_by || '—'} {detail.approved_at ? `at ${new Date(detail.approved_at).toLocaleString()}` : ''}</dd>
             </dl>
-            <div className="mt-4 flex gap-2">
+            <div className="mt-4 flex flex-wrap gap-2 items-center">
+              <Link
+                to={`/?search=${encodeURIComponent(detail.user_email)}`}
+                className="bg-teal-600 text-white px-3 py-1 rounded text-sm hover:bg-teal-700"
+                onClick={() => setDetail(null)}
+              >
+                View alerts for this user
+              </Link>
+              {detail.status === 'ignored' && user?.role === 'responder' && (
+                <button type="button" onClick={() => handleResetStatus(detail.id)} className="bg-teal-600 text-white px-3 py-1 rounded text-sm hover:bg-teal-700">Un-ignore</button>
+              )}
               {user?.role === 'responder' && (
                 <>
                   <button type="button" onClick={() => handleApprove(detail.id)} className="bg-green-600 text-white px-3 py-1 rounded text-sm">Approve</button>
                   <button type="button" onClick={() => handleIgnore(detail.id)} className="bg-gray-500 text-white px-3 py-1 rounded text-sm">Ignore</button>
                   <button type="button" onClick={() => handleBlock(detail.id)} className="bg-red-600 text-white px-3 py-1 rounded text-sm">Block</button>
+                  <button
+                    type="button"
+                    onClick={() => { handleDisableAccount(detail.user_email); setDetail(null); }}
+                    disabled={disableBusy}
+                    className="bg-red-700 text-white px-3 py-1 rounded text-sm hover:bg-red-800 disabled:opacity-60"
+                    title="Disable account and revoke sessions"
+                  >
+                    Disable account
+                  </button>
                 </>
               )}
               <button type="button" onClick={() => setDetail(null)} className="bg-gray-200 px-3 py-1 rounded text-sm">Close</button>

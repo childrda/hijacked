@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { getMetrics, getAlerts } from '../api/client'
 import type { DashboardMetrics, FlaggedRow } from '../api/client'
 import { MetricCards } from '../components/MetricCards'
 import { FlaggedTable } from '../components/FlaggedTable'
 
 export function Dashboard({ user }: { user: { username: string; role: string } }) {
+  const [searchParams] = useSearchParams()
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null)
   const [alerts, setAlerts] = useState<FlaggedRow[]>([])
   const [loadingMetrics, setLoadingMetrics] = useState(true)
   const [loadingAlerts, setLoadingAlerts] = useState(true)
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState(() => searchParams.get('search') ?? '')
 
   const fetchMetrics = async () => {
     setLoadingMetrics(true)
