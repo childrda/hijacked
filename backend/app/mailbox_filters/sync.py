@@ -171,10 +171,13 @@ def run_filter_scan(db: Session) -> tuple[int, int]:
 
     settings = get_settings()
     if not settings.gmail_filter_inspection_enabled or not settings.filter_scan_enabled:
+        logger.info("Filter scan skipped: inspection or scan disabled")
         return 0, 0
     users = resolve_filter_scan_scope(settings.filter_scan_user_scope)
     if not users:
+        logger.warning("Filter scan skipped: scope resolved to no users (check FILTER_SCAN_USER_SCOPE and group/OU access)")
         return 0, 0
+    logger.info("Filter scan starting for %d user(s) from scope", len(users))
     total_filters = 0
     total_alerts = 0
     for user_email in users:

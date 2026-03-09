@@ -92,23 +92,41 @@ def resolve_filter_scan_scope(scope: str) -> list[str]:
     """
     Resolve FILTER_SCAN_USER_SCOPE to a list of user email addresses.
 
+    Each comma-separated item can be:
     - group:group@domain.com  → Google Group (email group): list members.
-    - ou:orgUnitId or ou:/Path/To/OU  → Organizational unit (user group): list users in OU.
-    - Else  → Comma-separated list of emails (unchanged).
+    - ou:orgUnitId or ou:/Path/To/OU  → Organizational unit: list users in OU.
+    - else  → Treated as a single user email.
 
-    Returns empty list if scope is empty or resolution fails.
+    Returns deduplicated list of user emails; empty if scope is empty.
     """
     scope = (scope or "").strip()
     if not scope:
         return []
 
-    lower = scope.lower()
-    if lower.startswith("group:"):
-        group_email = scope[6:].strip()
-        return _list_group_member_emails(group_email)
-    if lower.startswith("ou:"):
-        ou_value = scope[3:].strip()
-        return _list_org_unit_user_emails(ou_value)
-
-    # Backward compat: comma-separated list of emails
-    return [e.strip().lower() for e in scope.split(",") if e.strip()]
+    seen: set[str] = set()
+    result: list[str] = []
+    for part in scope.split(","):
+        token = part.strip()
+        if not token:
+            continue
+        lower = token.lower()
+        if lower.startswith("group:"):
+            group_email = token[6:].strip()
+            for email in _list_group_member_emails(group_email):
+                if email and email not in seen:
+                    seen.add(email)
+                    result.append(email)
+        elif lower.startswith("ou:"):
+            ou_value = token[3:].strip()
+            for email in _list_org_unit_user_emails(ou_value):
+                if email and email not in seen:
+                    seen.add(email)
+                    result.append(email)
+        else:
+            email = token.lower()
+            if "@" in email and email not in seen:
+                seen.add(email)
+                result.append(email)
+    if result:
+        logger.info("Filter scan scope resolved to %d user(s): %s", len(result), result[:10] if len(result) > 10 else result)
+    return result
