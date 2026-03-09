@@ -164,12 +164,15 @@ def _create_filter_detection(db: Session, mf: MailboxFilter, now: datetime) -> N
 def run_filter_scan(db: Session) -> tuple[int, int]:
     """
     Run filter scan for all users in FILTER_SCAN_USER_SCOPE (or empty to skip).
+    Scope can be: group:group@domain.com, ou:orgUnitId, ou:/path, or comma-separated emails.
     Returns (total_filters_seen, total_new_risky_alerts).
     """
+    from app.google.scope_resolver import resolve_filter_scan_scope
+
     settings = get_settings()
     if not settings.gmail_filter_inspection_enabled or not settings.filter_scan_enabled:
         return 0, 0
-    users = settings.filter_scan_user_scope_list
+    users = resolve_filter_scan_scope(settings.filter_scan_user_scope)
     if not users:
         return 0, 0
     total_filters = 0

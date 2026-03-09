@@ -189,10 +189,11 @@ def rescan_user(
     current_user: dict = Depends(require_responder),
 ):
     from app.config import get_settings
+    from app.google.scope_resolver import resolve_filter_scan_scope
     settings = get_settings()
     if not settings.gmail_filter_inspection_enabled:
         raise HTTPException(status_code=503, detail="Gmail filter inspection is disabled")
-    allowed = settings.filter_scan_user_scope_list
+    allowed = resolve_filter_scan_scope(settings.filter_scan_user_scope)
     if allowed and body.user_email.lower() not in [u.lower() for u in allowed]:
         raise HTTPException(status_code=403, detail="User not in scan scope")
     try:

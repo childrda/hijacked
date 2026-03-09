@@ -90,7 +90,7 @@ class Settings(BaseSettings):
     gmail_filter_inspection_enabled: bool = False
     filter_scan_enabled: bool = False
     filter_scan_interval_seconds: int = 3600   # default 60 min
-    filter_scan_user_scope: str = ""           # comma-separated user emails, or leave empty to derive from domain
+    filter_scan_user_scope: str = ""           # group:group@domain.com | ou:orgUnitId | ou:/path | comma-separated emails
     filter_risk_keywords: str = "security,alert,password,admin,phishing,login,verification,account"
     filter_approval_required: bool = True
     filter_external_forwarding_only: bool = False  # if True, only flag filters that forward externally

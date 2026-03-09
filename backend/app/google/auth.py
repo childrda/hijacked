@@ -20,6 +20,10 @@ SCOPES_DIRECTORY = [
 SCOPES_GMAIL_FILTERS = [
     "https://www.googleapis.com/auth/gmail.settings.basic",
 ]
+# List group members (for filter scan scope = group)
+SCOPES_GROUP_MEMBERS = [
+    "https://www.googleapis.com/auth/admin.directory.group.member.readonly",
+]
 
 
 def get_credentials(scopes: list[str] | None = None) -> service_account.Credentials:
