@@ -101,12 +101,13 @@ export function FlaggedTable({ rows, loading, search, onSearchChange, statusFilt
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <h2 className="text-xl font-bold text-gray-800 px-6 py-4">Flagged Accounts (Last 24 Hours)</h2>
         <div className="px-6 pb-4 flex flex-wrap items-center gap-4">
-          <label className="flex items-center gap-2 text-sm">
-            <span>Status:</span>
+          <label className="flex items-center gap-2 text-sm font-medium text-gray-700 shrink-0">
+            <span>Filter by status:</span>
             <select
               value={statusFilter}
               onChange={(e) => onStatusFilterChange(e.target.value)}
-              className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+              className="border-2 border-gray-400 rounded-lg px-3 py-2 bg-white min-w-[180px] focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+              title="Show Open, Closed, Contained, etc."
             >
               <option value="OPEN">Open (new + triage)</option>
               <option value="NEW">New</option>

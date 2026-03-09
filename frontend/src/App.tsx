@@ -52,6 +52,7 @@ export default function App() {
             <div className="flex items-center gap-3">
               <img src="/wasp-logo.png" alt="WASP" className="h-8 w-auto object-contain" />
               <h1 className="text-lg font-semibold">WASP – Workspace Account Security Patrol</h1>
+              <span className="text-teal-200 text-sm font-normal" title="App version">v{__APP_VERSION__}</span>
             </div>
             <div className="flex items-center gap-4 text-sm">
               <span>{user.username} ({user.role})</span>

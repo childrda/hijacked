@@ -33,12 +33,14 @@ Full-stack app that ingests Google Workspace audit events, detects suspicious ma
    docker compose up
    ```
 
-   To build only the frontend:
+   To build only the frontend (e.g. after pulling UI changes like the Status dropdown):
 
    ```bash
-   docker compose build frontend
-   docker compose up
+   docker compose build frontend --no-cache
+   docker compose up -d
    ```
+
+   After `git pull`, run `docker compose up -d --build` (or rebuild the `frontend` service) so the browser gets the new JavaScript; otherwise you may still see the old UI.
 
    A **root `.dockerignore`** (and `frontend/.dockerignore`) excludes `node_modules`, `dist`, `.env`, etc. from the build context so host artifacts never get copied in and builds stay reproducible across machines.
 
