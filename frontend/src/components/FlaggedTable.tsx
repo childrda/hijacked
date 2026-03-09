@@ -85,6 +85,8 @@ export function FlaggedTable({ rows, loading, search, onSearchChange, statusFilt
         alert(`Skipped (e.g. protected list):\n\n${messages.join('\n') || 'User or domain is on PROTECTED_EMAILS / PROTECTED_DOMAINS.'}`)
       } else if (succeeded.length > 0) {
         alert(`Done: ${succeeded.length} account(s).\n\n${messages.slice(0, 3).join('\n') || 'Suspended in Google; sessions revoked.'}`)
+      } else {
+        alert('No action taken (e.g. already contained, closed, or no valid target). Check Status filter or backend logs.')
       }
     } catch (e) {
       alert((e as Error)?.message || 'Failed to disable account')

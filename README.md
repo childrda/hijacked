@@ -283,9 +283,15 @@ The `AD_BIND_DN` service account can disable users via LDAP. To reduce blast rad
 After clicking **Disable account**, the UI shows an alert with the outcome (success, skipped, or the error message from the backend). If the account is not actually suspended in Google:
 
 1. **Check the alert text** – It now includes the backend message (e.g. "Skipped (protected list)", or the Google API error).
-2. **Check backend logs** – Each disable is logged:  
-   `Disable account: user@domain.com -> SUCCESS|FAILED|SKIPPED | <message>`  
-   Run: `docker compose logs backend -f` and click Disable again to see the line.
+2. **Check backend logs** – Each disable and every Google API call is logged. Run:
+   ```bash
+   docker compose logs backend -f
+   ```
+   Then click Disable again. You should see lines like:
+   - `Containment: user@domain.com -> calling Google (suspend, signOut, revoke)`
+   - `Google API: suspend_user(user@domain.com)` and either `-> 200 OK` or `-> 403 ...` (or another error)
+   - `Disable account: user@domain.com -> SUCCESS|FAILED|SKIPPED | <message>`
+   If you see `200 OK` but the user is not suspended in Admin Console, try refreshing the Admin Console or check you're looking at the same user/domain.
 3. **Protected list** – If the user or their domain is in `PROTECTED_EMAILS` or `PROTECTED_DOMAINS`, containment is skipped. Remove them from the list or use a test user not on the list.
 4. **Google API** – Ensure the service account has **domain-wide delegation** and the Admin SDK Directory API is enabled. The delegated scope must include `https://www.googleapis.com/auth/admin.directory.user`. In Google Admin Console: Security → API Controls → Domain-wide delegation, add the client ID with that scope.
 5. **Credentials** – `GOOGLE_CREDENTIALS_JSON` (or path) must be set and valid; `GOOGLE_WORKSPACE_ADMIN_USER` must be a super-admin for the domain.

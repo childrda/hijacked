@@ -75,6 +75,8 @@ export function MailboxFiltersPage({ user }: Props) {
         const msg = a?.message || (r.mode === 'TAKEN' ? 'Account disabled and sessions revoked.' : 'Action recorded (proposed).')
         if (a?.result === 'FAILED' || a?.error) {
           alert(`Disable failed:\n\n${msg}`)
+        } else if (a?.result === 'SKIPPED') {
+          alert(`Skipped (e.g. protected list):\n\n${msg}`)
         } else {
           alert(msg)
         }

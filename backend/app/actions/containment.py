@@ -1,6 +1,7 @@
 """Containment: optionally disable in AD and/or Google Workspace (both only when ACTION_FLAG is True)."""
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -8,6 +9,8 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.google.directory_client import suspend_user, sign_out_user, revoke_all_tokens
 from app.actions.ad_client import disable_user_in_ad, ad_disable_available
+
+logger = logging.getLogger(__name__)
 
 
 def _google_workspace_enabled() -> bool:
@@ -41,6 +44,7 @@ def run_containment(db: Session, target_email: str, detection_id: int | None, mo
     details: dict[str, Any] = {"ad_disable": None, "suspend": None, "sign_out": None, "revoke_tokens": None}
     if mode == "PROPOSED":
         details["proposed"] = True
+        logger.info("Containment: %s (PROPOSED - no API calls)", target_email)
         return details
 
     # Pre-flight: do not suspend protected emails/domains
@@ -50,6 +54,7 @@ def run_containment(db: Session, target_email: str, detection_id: int | None, mo
         details["skip_reason"] = reason
         details["ad_disable"] = {"skipped": True, "reason": reason}
         details["suspend"] = details["sign_out"] = details["revoke_tokens"] = {"skipped": True, "reason": reason}
+        logger.info("Containment: %s SKIPPED (protected): %s", target_email, reason)
         return details
 
     # 1. Active Directory (only if enabled and configured)
@@ -60,17 +65,20 @@ def run_containment(db: Session, target_email: str, detection_id: int | None, mo
 
     # 2. Google Workspace (only if enabled)
     if _google_workspace_enabled():
+        logger.info("Containment: %s -> calling Google (suspend, signOut, revoke)", target_email)
         suspend_res = suspend_user(target_email)
         details["suspend"] = suspend_res
         details["sign_out"] = sign_out_user(target_email)
         details["revoke_tokens"] = revoke_all_tokens(target_email)
         if suspend_res.get("error"):
             details["suspend_error"] = suspend_res.get("error")
+            logger.warning("Containment: %s suspend failed: %s", target_email, (str(suspend_res.get("error") or ""))[:300])
     else:
         details["suspend"] = details["sign_out"] = details["revoke_tokens"] = {
             "skipped": True,
             "reason": "Google Workspace disabled",
         }
+        logger.info("Containment: %s -> Google disabled in config", target_email)
 
     return details
 
