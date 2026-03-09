@@ -21,7 +21,8 @@ async def post_disable_account(
 ):
     alert_ids = body.get("alert_ids") or body.get("detection_ids") or []
     reason = body.get("reason") or ""
-    result = await disable_account(db, alert_ids, reason=reason)
+    # Responder clicked Disable in UI: always execute containment (ACTION_FLAG only gates automatic flows)
+    result = await disable_account(db, alert_ids, reason=reason, force_execute=True)
     for action in result.get("actions") or []:
         det_id = action.get("detection_id")
         if det_id:
@@ -48,7 +49,7 @@ async def post_disable_account_by_email(
     current_user: dict = Depends(require_responder),
 ):
     """Run containment for a user by email (e.g. from Mailbox Filters when there is no alert)."""
-    result = await disable_account_by_email(db, body.user_email.strip(), reason=body.reason)
+    result = await disable_account_by_email(db, body.user_email.strip(), reason=body.reason, force_execute=True)
     log_audit(
         db,
         actor=current_user["username"],

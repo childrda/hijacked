@@ -18,15 +18,17 @@ async def disable_account(
     db: Session,
     alert_ids: list[int],
     reason: str = "",
+    *,
+    force_execute: bool = False,
 ) -> dict[str, Any]:
     """
     For each detection: run containment (or propose), record action, update detection status.
-    If ACTION_FLAG=false, mode=PROPOSED and we don't call Directory API.
-    Circuit breaker: if DISABLE_ACCOUNT successes in the last SUSPENSION_RATE_LIMIT_MINUTES exceed
-    SUSPENSION_RATE_LIMIT_MAX, no further suspensions run until the window clears.
+    When force_execute=True (responder clicked Disable in UI), always run containment (TAKEN).
+    When force_execute=False, ACTION_FLAG controls mode: TAKEN vs PROPOSED (for automatic flows).
+    Circuit breaker and cooldown apply when mode=TAKEN.
     """
     settings = get_settings()
-    mode = "TAKEN" if settings.action_flag else "PROPOSED"
+    mode = "TAKEN" if (force_execute or settings.action_flag) else "PROPOSED"
 
     # Circuit breaker: when we would actually run containment, enforce global rate limit
     if mode == "TAKEN" and alert_ids:
@@ -117,14 +119,16 @@ async def disable_account_by_email(
     db: Session,
     user_email: str,
     reason: str = "",
+    *,
+    force_execute: bool = False,
 ) -> dict[str, Any]:
     """
     Run containment for a user by email (e.g. from Mailbox Filters when there is no alert).
-    Same protections as disable_account: rate limit, cooldown, protected list, ACTION_FLAG.
-    Records an Action with detection_id=None.
+    When force_execute=True (responder clicked Disable in UI), always run containment (TAKEN).
+    Otherwise ACTION_FLAG controls mode. Rate limit, cooldown, protected list still apply.
     """
     settings = get_settings()
-    mode = "TAKEN" if settings.action_flag else "PROPOSED"
+    mode = "TAKEN" if (force_execute or settings.action_flag) else "PROPOSED"
     target_email = (user_email or "").strip().lower()
     if not target_email or "@" not in target_email:
         raise HTTPException(status_code=400, detail="Invalid user_email")

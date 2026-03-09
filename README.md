@@ -40,6 +40,13 @@ Full-stack app that ingests Google Workspace audit events, detects suspicious ma
    docker compose up -d
    ```
 
+   If you see **"network mode bridge2 not supported by buildkit"**, use the legacy builder for that build:
+
+   ```bash
+   DOCKER_BUILDKIT=0 docker compose build frontend --no-cache
+   docker compose up -d
+   ```
+
    After `git pull`, run `docker compose up -d --build` (or rebuild the `frontend` service) so the browser gets the new JavaScript; otherwise you may still see the old UI.
 
    A **root `.dockerignore`** (and `frontend/.dockerignore`) excludes `node_modules`, `dist`, `.env`, etc. from the build context so host artifacts never get copied in and builds stay reproducible across machines.
@@ -66,7 +73,7 @@ Full-stack app that ingests Google Workspace audit events, detects suspicious ma
 | `GOOGLE_CREDENTIALS_JSON` | Service account JSON (string or path). Required when `ENABLE_GOOGLE_WORKSPACE=true` and for Google ingest. |
 | `GOOGLE_WORKSPACE_ADMIN_USER` | Admin user for domain-wide delegation (e.g. `admin@domain.tld`) |
 | `SUPPORT_EMAIL` | Email that receives alerts and test emails |
-| `ACTION_FLAG` | `true` = run containment when triggered; `false` = record proposed actions only |
+| `ACTION_FLAG` | When `true`, allows the *app* to take containment automatically (e.g. without admin intervention). Manual "Disable account" by a responder always runs containment regardless of this flag. |
 | `ACTION_COOLDOWN_MINUTES` | Prevent repeated disable actions on same account within cooldown window |
 | `SUSPENSION_RATE_LIMIT_MAX` | Max DISABLE_ACCOUNT successes in the window; circuit breaker trips above this (default 5) |
 | `SUSPENSION_RATE_LIMIT_MINUTES` | Rolling window for suspension rate limit (default 60) |

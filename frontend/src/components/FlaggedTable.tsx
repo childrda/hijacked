@@ -68,11 +68,19 @@ export function FlaggedTable({ rows, loading, search, onSearchChange, statusFilt
   const doDisable = async (ids: number[]) => {
     setBusy(true)
     try {
-      await disableAccount(ids)
+      const result = await disableAccount(ids)
       setSelected(new Set())
       refresh()
       setModal(null)
       setModalPayload(null)
+      const failed = (result.actions || []).filter((a: any) => a.result === 'FAILED' || a.error)
+      if (failed.length > 0) {
+        alert(`Disable completed with issues: ${failed.length} failed. Check backend logs (e.g. API permissions, protected list).`)
+      } else if (result.mode === 'PROPOSED') {
+        alert('Action was recorded only (no changes in Google). Contact admin if this was unexpected.')
+      }
+    } catch (e) {
+      alert((e as Error)?.message || 'Failed to disable account')
     } finally {
       setBusy(false)
     }
