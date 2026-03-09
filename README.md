@@ -278,6 +278,18 @@ The `AD_BIND_DN` service account can disable users via LDAP. To reduce blast rad
   - `POLL_MODE=internal`: backend runs poll loop with `POLL_INTERVAL_SECONDS +/- POLL_JITTER_SECONDS`.
 - **Incident flow runbook:** `NEW -> TRIAGE -> CONTAINED (if needed) -> CLOSED` or `FALSE_POSITIVE`; record notes and assignment on each step.
 
+### Troubleshooting "Disable account"
+
+After clicking **Disable account**, the UI shows an alert with the outcome (success, skipped, or the error message from the backend). If the account is not actually suspended in Google:
+
+1. **Check the alert text** – It now includes the backend message (e.g. "Skipped (protected list)", or the Google API error).
+2. **Check backend logs** – Each disable is logged:  
+   `Disable account: user@domain.com -> SUCCESS|FAILED|SKIPPED | <message>`  
+   Run: `docker compose logs backend -f` and click Disable again to see the line.
+3. **Protected list** – If the user or their domain is in `PROTECTED_EMAILS` or `PROTECTED_DOMAINS`, containment is skipped. Remove them from the list or use a test user not on the list.
+4. **Google API** – Ensure the service account has **domain-wide delegation** and the Admin SDK Directory API is enabled. The delegated scope must include `https://www.googleapis.com/auth/admin.directory.user`. In Google Admin Console: Security → API Controls → Domain-wide delegation, add the client ID with that scope.
+5. **Credentials** – `GOOGLE_CREDENTIALS_JSON` (or path) must be set and valid; `GOOGLE_WORKSPACE_ADMIN_USER` must be a super-admin for the domain.
+
 ## Email alerts
 
 - The app sends an email to `SUPPORT_EMAIL` when a **new** detection is OPEN and score ≥ `SEVERITY_THRESHOLD`.

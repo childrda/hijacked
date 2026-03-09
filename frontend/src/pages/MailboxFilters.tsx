@@ -71,8 +71,13 @@ export function MailboxFiltersPage({ user }: Props) {
     setDisableBusy(true)
     disableAccountByEmail(userEmail)
       .then((r) => {
-        const msg = r.mode === 'TAKEN' ? 'Account disabled and sessions revoked.' : 'Action recorded (proposed). Set ACTION_FLAG=true to run for real.'
-        alert(msg)
+        const a = (r.actions || [])[0]
+        const msg = a?.message || (r.mode === 'TAKEN' ? 'Account disabled and sessions revoked.' : 'Action recorded (proposed).')
+        if (a?.result === 'FAILED' || a?.error) {
+          alert(`Disable failed:\n\n${msg}`)
+        } else {
+          alert(msg)
+        }
       })
       .catch((e) => alert(e?.message || 'Failed to disable account'))
       .finally(() => setDisableBusy(false))

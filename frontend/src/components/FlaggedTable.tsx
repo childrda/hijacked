@@ -73,11 +73,18 @@ export function FlaggedTable({ rows, loading, search, onSearchChange, statusFilt
       refresh()
       setModal(null)
       setModalPayload(null)
-      const failed = (result.actions || []).filter((a: any) => a.result === 'FAILED' || a.error)
+      const actions = result.actions || []
+      const failed = actions.filter((a: any) => a.result === 'FAILED' || a.error)
+      const skipped = actions.filter((a: any) => a.result === 'SKIPPED')
+      const succeeded = actions.filter((a: any) => a.result === 'SUCCESS')
+      const messages = actions.map((a: any) => a.message || a.error || a.result).filter(Boolean)
       if (failed.length > 0) {
-        alert(`Disable completed with issues: ${failed.length} failed. Check backend logs (e.g. API permissions, protected list).`)
-      } else if (result.mode === 'PROPOSED') {
-        alert('Action was recorded only (no changes in Google). Contact admin if this was unexpected.')
+        const detail = messages.length ? messages.join('\n') : 'Check backend logs (API permissions, protected list, domain-wide delegation).'
+        alert(`Disable failed (${failed.length}):\n\n${detail}`)
+      } else if (skipped.length > 0 && succeeded.length === 0) {
+        alert(`Skipped (e.g. protected list):\n\n${messages.join('\n') || 'User or domain is on PROTECTED_EMAILS / PROTECTED_DOMAINS.'}`)
+      } else if (succeeded.length > 0) {
+        alert(`Done: ${succeeded.length} account(s).\n\n${messages.slice(0, 3).join('\n') || 'Suspended in Google; sessions revoked.'}`)
       }
     } catch (e) {
       alert((e as Error)?.message || 'Failed to disable account')

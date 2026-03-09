@@ -1,6 +1,7 @@
 """Disable-account action: containment + record; email notification logic."""
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone, timedelta
 from typing import Any
 
@@ -12,6 +13,22 @@ from app.db.models import Detection, Action
 from app.actions.containment import run_containment, result_from_details
 from app.detect.rules import get_label
 from app.services.audit_service import log_audit
+
+logger = logging.getLogger(__name__)
+
+
+def _containment_message(details: dict[str, Any], result: str) -> str:
+    """Short user-facing message for containment outcome (for API response and logs)."""
+    if details.get("proposed"):
+        return "Proposed only (no API calls)."
+    if details.get("skipped"):
+        return details.get("skip_reason") or "Skipped (protected list)."
+    err = details.get("suspend_error") or (details.get("suspend") or {}).get("error")
+    if err:
+        return str(err)[:500]
+    if result == "SUCCESS":
+        return "Suspended in Google; sign-out and token revoke attempted."
+    return result or "Done"
 
 
 async def disable_account(
@@ -80,12 +97,15 @@ async def disable_account(
                     "target_email": target_email,
                     "result": "FAILED",
                     "error": "cooldown_active",
+                    "message": "Cooldown active; wait before retrying.",
                 }
             )
             continue
         target = target_email
         details = run_containment(db, target, det_id, mode=mode)
         result = result_from_details(details)
+        msg = _containment_message(details, result)
+        logger.info("Disable account: %s -> %s | %s", target, result, msg)
         time_bucket_start = datetime.now(timezone.utc).replace(second=0, microsecond=0)
         existing = (
             db.query(Action)
@@ -93,7 +113,7 @@ async def disable_account(
             .first()
         )
         if existing:
-            results.append({"detection_id": det_id, "target_email": target, "result": existing.result, "deduped": True})
+            results.append({"detection_id": det_id, "target_email": target, "result": existing.result, "deduped": True, "message": "Already recorded."})
             continue
         act = Action(
             detection_id=det_id,
@@ -110,7 +130,7 @@ async def disable_account(
         elif det.status == "NEW":
             det.status = "TRIAGE"
         det.updated_at = datetime.now(timezone.utc)
-        results.append({"detection_id": det_id, "target_email": target, "result": result})
+        results.append({"detection_id": det_id, "target_email": target, "result": result, "message": msg})
     db.commit()
     return {"actions": results, "mode": mode}
 
@@ -166,12 +186,14 @@ async def disable_account_by_email(
     )
     if recent:
         return {
-            "actions": [{"target_email": target_email, "result": "FAILED", "error": "cooldown_active"}],
+            "actions": [{"target_email": target_email, "result": "FAILED", "error": "cooldown_active", "message": "Cooldown active; wait before retrying."}],
             "mode": mode,
         }
 
     details = run_containment(db, target_email, detection_id=None, mode=mode)
     result = result_from_details(details)
+    msg = _containment_message(details, result)
+    logger.info("Disable account by email: %s -> %s | %s", target_email, result, msg)
     time_bucket_start = datetime.now(timezone.utc).replace(second=0, microsecond=0)
     act = Action(
         detection_id=None,
@@ -184,7 +206,7 @@ async def disable_account_by_email(
     )
     db.add(act)
     db.commit()
-    return {"actions": [{"target_email": target_email, "result": result}], "mode": mode}
+    return {"actions": [{"target_email": target_email, "result": result, "message": msg}], "mode": mode}
 
 
 def build_detection_email(
