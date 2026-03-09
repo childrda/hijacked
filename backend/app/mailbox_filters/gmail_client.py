@@ -15,6 +15,13 @@ logger = logging.getLogger(__name__)
 
 
 def _credentials_for_user(user_email: str):
+    user_email = (user_email or "").strip().lower()
+    if not user_email or "@" not in user_email:
+        raise ValueError("Gmail impersonation requires a valid user email")
+    if user_email.startswith("group:") or user_email.startswith("ou:"):
+        raise ValueError(
+            "Cannot impersonate a group or OU; use FILTER_SCAN_USER_SCOPE with group: or ou: to expand to user emails"
+        )
     settings = get_settings()
     creds_dict = settings.get_google_credentials()
     if not creds_dict or creds_dict == {}:

@@ -214,14 +214,20 @@ def rescan_user(
 ):
     from app.config import get_settings
     from app.google.scope_resolver import resolve_filter_scan_scope
+    email = (body.user_email or "").strip().lower()
+    if email.startswith("group:") or email.startswith("ou:"):
+        raise HTTPException(
+            status_code=400,
+            detail="Rescan requires a user email, not a group or OU. The scheduled scan expands group:/ou: automatically.",
+        )
     settings = get_settings()
     if not settings.gmail_filter_inspection_enabled:
         raise HTTPException(status_code=503, detail="Gmail filter inspection is disabled")
     allowed = resolve_filter_scan_scope(settings.filter_scan_user_scope)
-    if allowed and body.user_email.lower() not in [u.lower() for u in allowed]:
+    if allowed and email not in [u.lower() for u in allowed]:
         raise HTTPException(status_code=403, detail="User not in scan scope")
     try:
-        n_filters, n_alerts = _run_filter_scan_user(db, body.user_email)
+        n_filters, n_alerts = _run_filter_scan_user(db, email)
     except Exception as e:
         log_audit(
             db,
