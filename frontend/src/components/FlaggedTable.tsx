@@ -21,6 +21,8 @@ function avatarPlaceholder(email: string): string {
   return email.charAt(0).toUpperCase()
 }
 
+const ALERT_STATUS_OPTIONS = ['NEW', 'TRIAGE', 'CONTAINED', 'CLOSED', 'FALSE_POSITIVE'] as const
+
 type Props = {
   rows: FlaggedRow[]
   loading: boolean
@@ -69,25 +71,26 @@ export function FlaggedTable({ rows, loading, search, onSearchChange, statusFilt
     setBusy(true)
     try {
       const result = await disableAccount(ids)
-      setSelected(new Set())
-      refresh()
-      setModal(null)
-      setModalPayload(null)
       const actions = result.actions || []
       const failed = actions.filter((a: any) => a.result === 'FAILED' || a.error)
       const skipped = actions.filter((a: any) => a.result === 'SKIPPED')
       const succeeded = actions.filter((a: any) => a.result === 'SUCCESS')
       const messages = actions.map((a: any) => a.message || a.error || a.result).filter(Boolean)
+      let feedback: string
       if (failed.length > 0) {
-        const detail = messages.length ? messages.join('\n') : 'Check backend logs (API permissions, protected list, domain-wide delegation).'
-        alert(`Disable failed (${failed.length}):\n\n${detail}`)
+        feedback = `Disable failed (${failed.length}):\n\n${messages.length ? messages.join('\n') : 'Check backend logs (API permissions, protected list, domain-wide delegation).'}`
       } else if (skipped.length > 0 && succeeded.length === 0) {
-        alert(`Skipped (e.g. protected list):\n\n${messages.join('\n') || 'User or domain is on PROTECTED_EMAILS / PROTECTED_DOMAINS.'}`)
+        feedback = `Skipped:\n\n${messages.join('\n') || 'User or domain may be on PROTECTED_EMAILS / PROTECTED_DOMAINS, or alert is already Closed/Contained.'}`
       } else if (succeeded.length > 0) {
-        alert(`Done: ${succeeded.length} account(s).\n\n${messages.slice(0, 3).join('\n') || 'Suspended in Google; sessions revoked.'}`)
+        feedback = `Done: ${succeeded.length} account(s).\n\n${messages.slice(0, 3).join('\n') || 'Suspended in Google; sessions revoked.'}`
       } else {
-        alert('No action taken (e.g. already contained, closed, or no valid target). Check Status filter or backend logs.')
+        feedback = 'No action taken (e.g. already contained, closed, or no valid target). Check Status filter or backend logs.'
       }
+      alert(feedback)
+      setSelected(new Set())
+      refresh()
+      setModal(null)
+      setModalPayload(null)
     } catch (e) {
       alert((e as Error)?.message || 'Failed to disable account')
     } finally {
@@ -231,7 +234,30 @@ export function FlaggedTable({ rows, loading, search, onSearchChange, statusFilt
                     <td className="py-3 px-4">
                       <RiskBadge level={row.risk_level} />
                     </td>
-                    <td className="py-3 px-4 text-gray-700">{row.status}</td>
+                    <td className="py-3 px-4">
+                      {canRespond ? (
+                        <select
+                          value={row.status}
+                          onChange={async (e) => {
+                            const next = e.target.value
+                            try {
+                              await updateAlertStatus(row.id, next)
+                              refresh()
+                            } catch (err) {
+                              alert((err as Error)?.message || 'Failed to update status')
+                            }
+                          }}
+                          className="text-gray-700 border border-gray-300 rounded px-2 py-1 text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                          title="Change status"
+                        >
+                          {ALERT_STATUS_OPTIONS.map((s) => (
+                            <option key={s} value={s}>{s}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="text-gray-700">{row.status}</span>
+                      )}
+                    </td>
                     <td className="py-3 px-4 text-gray-700">{row.assigned_to || '—'}</td>
                     <td className="py-3 px-4">
                       <div className="flex gap-2">

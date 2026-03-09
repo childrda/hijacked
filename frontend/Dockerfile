@@ -12,6 +12,8 @@ RUN NODE_ENV=development npm ci --include=dev
 COPY . .
 # Build uses node_modules/.bin from install above
 RUN npm run build
+# Expose version for runtime display (survives cache; no Vite define needed)
+RUN node -e "const fs=require('fs'),p=require('./package.json'); fs.writeFileSync('dist/version.json', JSON.stringify({version: p.version}))"
 
 # Runtime stage: nginx serves static + proxies /api to backend (no Node/npm at runtime)
 FROM nginx:alpine

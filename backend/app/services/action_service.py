@@ -23,7 +23,10 @@ def _containment_message(details: dict[str, Any], result: str) -> str:
         return "Proposed only (no API calls)."
     if details.get("skipped"):
         return details.get("skip_reason") or "Skipped (protected list)."
-    err = details.get("suspend_error") or (details.get("suspend") or {}).get("error")
+    suspend = details.get("suspend") or {}
+    if suspend.get("skipped") and suspend.get("reason"):
+        return str(suspend.get("reason"))  # e.g. "Google Workspace disabled"
+    err = details.get("suspend_error") or suspend.get("error")
     if err:
         return str(err)[:500]
     if result == "SUCCESS":
@@ -75,12 +78,26 @@ async def disable_account(
     for det_id in alert_ids:
         det = db.get(Detection, det_id)
         if not det:
+            results.append(
+                {"detection_id": det_id, "target_email": None, "result": "SKIPPED", "message": "Alert not found."}
+            )
             continue
         # Use only DB-backed target_email; reject empty or invalid to prevent injection.
         target_email = (det.target_email or "").strip()
         if not target_email or "@" not in target_email:
+            results.append(
+                {"detection_id": det_id, "target_email": None, "result": "SKIPPED", "message": "No valid target email."}
+            )
             continue
         if det.status in {"CONTAINED", "CLOSED"}:
+            results.append(
+                {
+                    "detection_id": det_id,
+                    "target_email": target_email,
+                    "result": "SKIPPED",
+                    "message": f"Alert is already {det.status}; no action taken.",
+                }
+            )
             continue
         # Cooldown to avoid repeated disable action on same account.
         recent_action = (
