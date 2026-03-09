@@ -26,11 +26,13 @@ type Props = {
   loading: boolean
   search: string
   onSearchChange: (v: string) => void
+  statusFilter: string
+  onStatusFilterChange: (v: string) => void
   refresh: () => void
   user: { username: string; role: string }
 }
 
-export function FlaggedTable({ rows, loading, search, onSearchChange, refresh, user }: Props) {
+export function FlaggedTable({ rows, loading, search, onSearchChange, statusFilter, onStatusFilterChange, refresh, user }: Props) {
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [busy, setBusy] = useState(false)
   const [modal, setModal] = useState<'disable-one' | 'disable-bulk' | 'dismiss-bulk' | null>(null)
@@ -99,6 +101,21 @@ export function FlaggedTable({ rows, loading, search, onSearchChange, refresh, u
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <h2 className="text-xl font-bold text-gray-800 px-6 py-4">Flagged Accounts (Last 24 Hours)</h2>
         <div className="px-6 pb-4 flex flex-wrap items-center gap-4">
+          <label className="flex items-center gap-2 text-sm">
+            <span>Status:</span>
+            <select
+              value={statusFilter}
+              onChange={(e) => onStatusFilterChange(e.target.value)}
+              className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+            >
+              <option value="OPEN">Open (new + triage)</option>
+              <option value="NEW">New</option>
+              <option value="TRIAGE">Triage</option>
+              <option value="CONTAINED">Contained</option>
+              <option value="CLOSED">Closed</option>
+              <option value="FALSE_POSITIVE">False positive</option>
+            </select>
+          </label>
           <div className="relative flex-1 min-w-[200px]">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
             <input

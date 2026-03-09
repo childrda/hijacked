@@ -12,6 +12,7 @@ export function Dashboard({ user }: { user: { username: string; role: string } }
   const [loadingMetrics, setLoadingMetrics] = useState(true)
   const [loadingAlerts, setLoadingAlerts] = useState(true)
   const [search, setSearch] = useState(() => searchParams.get('search') ?? '')
+  const [statusFilter, setStatusFilter] = useState<string>('OPEN')
 
   const fetchMetrics = async () => {
     setLoadingMetrics(true)
@@ -26,7 +27,7 @@ export function Dashboard({ user }: { user: { username: string; role: string } }
   const fetchAlerts = async () => {
     setLoadingAlerts(true)
     try {
-      const a = await getAlerts({ status: 'OPEN', window: '24h', search: search || undefined })
+      const a = await getAlerts({ status: statusFilter, window: '24h', search: search || undefined })
       setAlerts(a)
     } finally {
       setLoadingAlerts(false)
@@ -39,7 +40,7 @@ export function Dashboard({ user }: { user: { username: string; role: string } }
 
   useEffect(() => {
     fetchAlerts()
-  }, [search])
+  }, [search, statusFilter])
 
   return (
     <div className="space-y-6">
@@ -53,6 +54,8 @@ export function Dashboard({ user }: { user: { username: string; role: string } }
         loading={loadingAlerts}
         search={search}
         onSearchChange={setSearch}
+        statusFilter={statusFilter}
+        onStatusFilterChange={setStatusFilter}
         refresh={fetchAlerts}
         user={user}
       />
