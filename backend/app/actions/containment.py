@@ -74,9 +74,10 @@ def run_containment(db: Session, target_email: str, detection_id: int | None, mo
             details["suspend_error"] = suspend_res.get("error")
             logger.warning("Containment: %s suspend failed: %s", target_email, (str(suspend_res.get("error") or ""))[:300])
     else:
+        reason = "Google Workspace disabled in config; no suspension performed. Set ENABLE_GOOGLE_WORKSPACE=true and configure Google API."
         details["suspend"] = details["sign_out"] = details["revoke_tokens"] = {
             "skipped": True,
-            "reason": "Google Workspace disabled",
+            "reason": reason,
         }
         logger.info("Containment: %s -> Google disabled in config", target_email)
 
@@ -88,7 +89,11 @@ def result_from_details(details: dict[str, Any]) -> str:
         return "SUCCESS"  # proposed counts as recorded
     if details.get("skipped"):
         return "SKIPPED"  # protected list; do not count toward rate limit
-    err = details.get("suspend_error") or (details.get("suspend") or {}).get("error")
+    # When Google is disabled in config we did not suspend; report as SKIPPED so UI does not say "Done"
+    suspend = details.get("suspend") or {}
+    if suspend.get("skipped") and suspend.get("reason"):
+        return "SKIPPED"
+    err = details.get("suspend_error") or suspend.get("error")
     ad = details.get("ad_disable") or {}
     if ad.get("error") and not ad.get("skipped"):
         err = err or ad.get("error")

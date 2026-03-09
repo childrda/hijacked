@@ -119,29 +119,38 @@ async def disable_account(
             )
             continue
         target = target_email
-        details = run_containment(db, target, det_id, mode=mode)
-        result = result_from_details(details)
-        msg = _containment_message(details, result)
-        logger.info("Disable account: %s -> %s | %s", target, result, msg)
         time_bucket_start = datetime.now(timezone.utc).replace(second=0, microsecond=0)
         existing = (
             db.query(Action)
             .filter(Action.detection_id == det_id, Action.action_type == "DISABLE_ACCOUNT")
             .first()
         )
-        if existing:
+        # Skip re-running if we already succeeded; allow retry when previous result was FAILED/SKIPPED (e.g. after fixing config)
+        if existing and existing.result == "SUCCESS":
+            results.append({"detection_id": det_id, "target_email": target, "result": existing.result, "deduped": True, "message": "Already contained."})
+            continue
+        if existing and existing.result in ("FAILED", "SKIPPED") and not force_execute:
             results.append({"detection_id": det_id, "target_email": target, "result": existing.result, "deduped": True, "message": "Already recorded."})
             continue
-        act = Action(
-            detection_id=det_id,
-            target_email=target,
-            action_type="DISABLE_ACCOUNT",
-            mode=mode,
-            result=result,
-            details_json=details,
-            time_bucket_start=time_bucket_start,
-        )
-        db.add(act)
+        details = run_containment(db, target, det_id, mode=mode)
+        result = result_from_details(details)
+        msg = _containment_message(details, result)
+        logger.info("Disable account: %s -> %s | %s", target, result, msg)
+        if existing:
+            existing.result = result
+            existing.details_json = details
+            existing.time_bucket_start = time_bucket_start
+        else:
+            act = Action(
+                detection_id=det_id,
+                target_email=target,
+                action_type="DISABLE_ACCOUNT",
+                mode=mode,
+                result=result,
+                details_json=details,
+                time_bucket_start=time_bucket_start,
+            )
+            db.add(act)
         if mode == "TAKEN" and result == "SUCCESS":
             det.status = "CONTAINED"
         elif det.status == "NEW":
@@ -302,6 +311,17 @@ def should_send_detection_email(detection: Detection) -> bool:
 
 
 def record_email_failure(db: Session, detection_id: int | None, target_email: str, error: str) -> None:
+    if detection_id is not None:
+        existing = (
+            db.query(Action)
+            .filter(Action.detection_id == detection_id, Action.action_type == "EMAIL_NOTIFY")
+            .first()
+        )
+        if existing:
+            existing.result = "FAILED"
+            existing.details_json = {"error": error}
+            db.commit()
+            return
     db.add(Action(
         detection_id=detection_id,
         target_email=target_email,
@@ -339,14 +359,23 @@ async def send_detection_notification(
         det.notified_at = datetime.now(timezone.utc)
         det.notification_count = (det.notification_count or 0) + 1
         det.last_notified_score = det.score
-        db.add(Action(
-            detection_id=detection_id,
-            target_email=det.target_email,
-            action_type="EMAIL_NOTIFY",
-            mode="TAKEN",
-            result="SUCCESS",
-            details_json={"subject": subject},
-        ))
+        existing = (
+            db.query(Action)
+            .filter(Action.detection_id == detection_id, Action.action_type == "EMAIL_NOTIFY")
+            .first()
+        )
+        if existing:
+            existing.result = "SUCCESS"
+            existing.details_json = {"subject": subject}
+        else:
+            db.add(Action(
+                detection_id=detection_id,
+                target_email=det.target_email,
+                action_type="EMAIL_NOTIFY",
+                mode="TAKEN",
+                result="SUCCESS",
+                details_json={"subject": subject},
+            ))
         db.commit()
         return True
     except Exception as e:
