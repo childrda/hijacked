@@ -45,7 +45,15 @@ def _list_group_member_emails(group_email: str) -> list[str]:
         logger.warning("Failed to list group %s: %s", group_email, e)
         return []
     except Exception as e:
-        logger.warning("Error resolving group %s: %s", group_email, e, exc_info=True)
+        err_str = str(e).lower()
+        if "unauthorized_client" in err_str or "not authorized" in err_str:
+            logger.warning(
+                "Error resolving group %s: %s. Add scope https://www.googleapis.com/auth/admin.directory.group.member.readonly to Domain-wide delegation in Admin Console (Security → API Controls).",
+                group_email,
+                e,
+            )
+        else:
+            logger.warning("Error resolving group %s: %s", group_email, e, exc_info=True)
         return []
 
 

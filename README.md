@@ -142,6 +142,7 @@ WASP can inspect Gmail filters (state inspection) via the Gmail API, because adm
    - `https://www.googleapis.com/auth/admin.directory.user`
    - `https://www.googleapis.com/auth/admin.directory.user.security`
    - `https://www.googleapis.com/auth/gmail.settings.basic` (only if using Gmail mailbox filter inspection)
+   - `https://www.googleapis.com/auth/admin.directory.group.member.readonly` (only if using `group:group@domain.com` in `FILTER_SCAN_USER_SCOPE`)
 3. Put the service account JSON in `GOOGLE_CREDENTIALS_JSON` and set `GOOGLE_WORKSPACE_ADMIN_USER` to a super-admin email.
 
 ## Running locally (no Docker)
